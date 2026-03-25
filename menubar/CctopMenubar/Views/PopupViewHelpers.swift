@@ -111,6 +111,7 @@ struct PanelContentView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @StateObject private var overlayController = OverlayController()
     @StateObject private var worktreeManager = WorktreeManager()
+    @State private var isFocused = false
 
     var body: some View {
         PopupView(
@@ -121,12 +122,35 @@ struct PanelContentView: View {
             navigate: navigate,
             overlayController: overlayController,
             worktreeManager: worktreeManager,
+            isFocused: isFocused,
             onRefreshSessions: { sessionManager.loadSessions() }
         )
         .frame(width: 320)
         .background(Color.panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(
+                    isFocused
+                        ? Color.statusGreen.opacity(0.5)
+                        : Color.clear,
+                    lineWidth: 2
+                )
+        )
         .id(themeManager.themeId)
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification
+            )
+        ) { _ in isFocused = true }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication.didResignActiveNotification
+            )
+        ) { _ in
+            isFocused = false
+            navigate.navActionSubject.send(.reset)
+        }
     }
 }
 

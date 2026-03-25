@@ -472,8 +472,10 @@ private let navKeyMap: [UInt16: PanelNavAction] = [
     36: .confirm,       // return
     53: .escape,        // escape
     48: .toggleTab,     // tab
+    33: .previousTab,   // [ key
+    30: .nextTab,       // ] key
     123: .previousTab,  // left arrow
-    124: .nextTab       // right arrow
+    124: .nextTab,      // right arrow
 ]
 
 extension AppDelegate {

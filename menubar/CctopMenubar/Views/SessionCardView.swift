@@ -212,6 +212,16 @@ struct SessionCardView: View {
                 triggerFlash(for: newStatus)
             }
         }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .sessionNeedsAttention
+            )
+        ) { notification in
+            guard let path = notification.userInfo?["projectPath"]
+                as? String,
+                path == session.projectPath else { return }
+            triggerFlash(for: session.status)
+        }
     }
 
     @ViewBuilder

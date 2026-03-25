@@ -76,6 +76,14 @@ class SessionManager: ObservableObject {
                   let oldStatus = oldStatuses[session.id],
                   !oldStatus.needsAttention else { continue }
             playAttentionSound(for: session)
+            // Notify with session info so UI can switch to correct tab
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .sessionNeedsAttention,
+                    object: nil,
+                    userInfo: ["projectPath": session.projectPath]
+                )
+            }
             break  // One sound per poll cycle is enough
         }
         archiveAndRemoveDeadSessions(dead)
@@ -228,12 +236,6 @@ class SessionManager: ObservableObject {
     }
 
     private func playAttentionSound(for session: Session) {
-        // Show the panel so the user sees the flash
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(
-                name: .sessionNeedsAttention, object: nil
-            )
-        }
         DispatchQueue.global(qos: .userInitiated).async {
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")

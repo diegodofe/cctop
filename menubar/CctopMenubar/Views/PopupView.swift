@@ -21,6 +21,7 @@ struct PopupView: View {
     var navigate: NavigateController?
     @ObservedObject var overlayController: OverlayController = OverlayController()
     @ObservedObject var worktreeManager: WorktreeManager = WorktreeManager()
+    var isFocused = false
     var onRefreshSessions: (() -> Void)?
     var initialTab: PopupTab = .active
     @State private var selectedTab: PopupTab = .active
@@ -150,6 +151,24 @@ struct PopupView: View {
             handleNavAction(action)
         }
         .onChange(of: selectedTab) { _ in selectedIndex = nil }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .sessionNeedsAttention
+            )
+        ) { notification in
+            guard let path = notification.userInfo?["projectPath"]
+                as? String else { return }
+            // Switch to whichever tab contains this session
+            let isInReview = inReviewSessions.contains {
+                $0.projectPath == path
+            }
+            let targetTab: PopupTab = isInReview ? .inReview : .active
+            if selectedTab != targetTab {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    selectedTab = targetTab
+                }
+            }
+        }
         .onAppear {
             selectedTab = initialTab
             worktreeManager.refreshPRs()
@@ -186,8 +205,8 @@ struct PopupView: View {
                 hasUrgent: inReviewSessions.contains { $0.status == .waitingPermission }
             )
             Spacer()
-            if isNavigateActive {
-                Text("Tab: switch  ↑↓: select  1-9: jump")
+            if isFocused {
+                Text("[]: tabs  ↑↓: select  1-9: jump")
                     .font(.system(size: 9))
                     .foregroundStyle(Color.textMuted)
             }
@@ -261,7 +280,7 @@ struct PopupView: View {
     ) -> some View {
         SessionCardView(
             session: session,
-            navigateIndex: isNavigateActive ? index + 1 : nil,
+            navigateIndex: isFocused ? index + 1 : nil,
             showSourceBadge: hasMultipleSources,
             isSelected: selectedIndex == index,
             isPerkupWorktree: WorktreeManager.isPerkupWorktree(
