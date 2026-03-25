@@ -44,6 +44,12 @@ class FloatingPanel: NSPanel {
     // MARK: - Header drag via tight event-tracking loop
 
     override func sendEvent(_ event: NSEvent) {
+        // Any click activates the app (focuses the panel)
+        if event.type == .leftMouseDown {
+            NSApp.activate(ignoringOtherApps: true)
+            makeKey()
+        }
+
         if event.type == .leftMouseDown && isInHeaderArea(event) {
             if event.clickCount == 2 {
                 panelDelegate?.panelDidRequestReset()
