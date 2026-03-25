@@ -559,10 +559,12 @@ extension AppDelegate {
         navKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.panel.isVisible else { return event }
 
-            // Navigate: digit keys jump to session
-            if self.navigateController.isActive,
-               let char = event.characters, let digit = Int(char), digit >= 1, digit <= 9 {
-                self.navigateController.navActionSubject.send(.jumpTo(digit - 1))
+            // Digit keys select session (works anytime panel is visible)
+            if let char = event.characters, let digit = Int(char),
+               digit >= 1, digit <= 9
+            {
+                self.navigateController.navActionSubject
+                    .send(.jumpTo(digit - 1))
                 return nil
             }
 

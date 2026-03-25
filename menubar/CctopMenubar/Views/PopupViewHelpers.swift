@@ -120,7 +120,8 @@ struct PanelContentView: View {
             pluginManager: pluginManager,
             navigate: navigate,
             overlayController: overlayController,
-            worktreeManager: worktreeManager
+            worktreeManager: worktreeManager,
+            onRefreshSessions: { sessionManager.loadSessions() }
         )
         .frame(width: 320)
         .background(Color.panelBackground)

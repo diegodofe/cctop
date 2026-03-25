@@ -23,6 +23,11 @@ struct SessionCardView: View {
     var isServerRunning = false
     var isServerLoading = false
     var onOpenPR: (() -> Void)?
+    var prMerged = false
+    var prReviewDecision: String = ""
+    var gitAhead: Int = 0
+    var gitBehind: Int = 0
+    var gitUnpushed = false
     var onShip: (() -> Void)?
     var isShipping = false
     var onRemove: (() -> Void)?
@@ -65,8 +70,14 @@ struct SessionCardView: View {
                         HStack(spacing: 2) {
                             if let prAction = onOpenPR {
                                 perkupActionButton(
-                                    systemImage: "arrow.triangle.pull",
-                                    action: prAction
+                                    systemImage: prMerged
+                                        ? "checkmark.circle.fill"
+                                        : "arrow.triangle.pull",
+                                    action: prAction,
+                                    destructive:
+                                        prReviewDecision == "CHANGES_REQUESTED",
+                                    active: prReviewDecision == "APPROVED",
+                                    merged: prMerged
                                 )
                             }
                             if isShipping {
@@ -121,29 +132,66 @@ struct SessionCardView: View {
                     Spacer()
                 }
 
-                // Row 2: branch / context
+                // Row 2: branch + git sync indicators
                 HStack(spacing: 5) {
                     Text(session.branch)
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(Color.textSecondary)
                         .lineLimit(1)
 
-                    if let name = session.sessionName {
-                        Text("/")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color.textMuted.opacity(0.6))
-                        Text(name)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.textSecondary)
-                            .lineLimit(1)
-                    } else if let context = session.contextLine {
-                        Text("/")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color.textMuted.opacity(0.6))
-                        Text(context)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.textSecondary)
-                            .lineLimit(1)
+                    if isPerkupWorktree {
+                        // Git sync badges
+                        if gitUnpushed {
+                            gitBadge(
+                                icon: "exclamationmark.arrow.triangle.2.circlepath",
+                                text: "unpushed",
+                                color: .orange
+                            )
+                        } else if gitAhead > 0 {
+                            gitBadge(
+                                icon: "arrow.up",
+                                text: "\(gitAhead)",
+                                color: .statusGreen
+                            )
+                        }
+                        if gitBehind > 0 {
+                            gitBadge(
+                                icon: "arrow.down",
+                                text: "\(gitBehind)",
+                                color: .statusAttention
+                            )
+                        }
+                        if !gitUnpushed && gitAhead == 0
+                            && gitBehind == 0
+                        {
+                            gitBadge(
+                                icon: "checkmark",
+                                text: "synced",
+                                color: .textMuted
+                            )
+                        }
+                    } else {
+                        if let name = session.sessionName {
+                            Text("/")
+                                .font(.system(size: 10))
+                                .foregroundStyle(
+                                    Color.textMuted.opacity(0.6)
+                                )
+                            Text(name)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.textSecondary)
+                                .lineLimit(1)
+                        } else if let context = session.contextLine {
+                            Text("/")
+                                .font(.system(size: 10))
+                                .foregroundStyle(
+                                    Color.textMuted.opacity(0.6)
+                                )
+                            Text(context)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.textSecondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
             }
@@ -252,15 +300,33 @@ struct SessionCardView: View {
         }
     }
 
+    private func gitBadge(
+        icon: String, text: String, color: Color
+    ) -> some View {
+        HStack(spacing: 2) {
+            Image(systemName: icon)
+                .font(.system(size: 7))
+            Text(text)
+                .font(.system(size: 8, weight: .medium))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 1)
+        .background(color.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+    }
+
     private func perkupActionButton(
         systemImage: String,
         action: @escaping () -> Void,
         destructive: Bool = false,
-        active: Bool = false
+        active: Bool = false,
+        merged: Bool = false
     ) -> some View {
         PerkupIconButton(
             systemImage: systemImage,
             active: active,
+            merged: merged,
             destructive: destructive,
             action: action
         )
@@ -289,6 +355,7 @@ private struct SpinningIcon: View {
 private struct PerkupIconButton: View {
     let systemImage: String
     var active = false
+    var merged = false
     var destructive = false
     let action: () -> Void
     @State private var hovered = false
@@ -310,6 +377,9 @@ private struct PerkupIconButton: View {
     }
 
     private var foregroundColor: Color {
+        if merged {
+            return hovered ? .purple : .purple.opacity(0.7)
+        }
         if active {
             return hovered ? Color.statusGreen : Color.statusGreen.opacity(0.7)
         }

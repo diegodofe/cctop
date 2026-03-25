@@ -91,6 +91,27 @@ class WorktreeManager: ObservableObject {
         removingPaths.insert(projectPath)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            // Kill claude sessions for this worktree
+            let sessionsDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".cctop/sessions")
+            if let files = try? FileManager.default.contentsOfDirectory(
+                at: sessionsDir, includingPropertiesForKeys: nil
+            ) {
+                for file in files where file.pathExtension == "json"
+                    && !file.lastPathComponent.hasSuffix(".lock")
+                {
+                    if let data = try? Data(contentsOf: file),
+                       let json = try? JSONSerialization.jsonObject(
+                        with: data
+                       ) as? [String: Any],
+                       json["project_name"] as? String == name,
+                       let pid = json["pid"] as? Int
+                    {
+                        kill(Int32(pid), SIGTERM)
+                    }
+                }
+            }
+
             // Close Cursor window
             let closeScript = """
             tell application "System Events"
@@ -398,20 +419,33 @@ class WorktreeManager: ObservableObject {
         let url: String
         let title: String
         let branch: String
+        let merged: Bool
+        let reviewDecision: String  // APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, ""
     }
 
-    /// Map of branch name -> PR info, refreshed periodically
+    struct GitSyncStatus {
+        let ahead: Int   // commits ahead of remote
+        let behind: Int  // commits behind main
+        let unpushed: Bool
+    }
+
+    /// Map of branch name -> PR info
     @Published var openPRs: [String: PRInfo] = [:]
+    /// Map of project path -> git sync status
+    @Published var gitSyncStatus: [String: GitSyncStatus] = [:]
 
     func refreshPRs() {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/gh")
+            process.executableURL = URL(
+                fileURLWithPath: "/opt/homebrew/bin/gh"
+            )
             process.arguments = [
                 "pr", "list",
                 "--repo", "perkupapp/perkup-app",
-                "--state", "open",
-                "--json", "headRefName,url,number,title",
+                "--state", "all",
+                "--json",
+                "headRefName,url,number,title,state,reviewDecision",
                 "--limit", "50",
             ]
 
@@ -422,13 +456,16 @@ class WorktreeManager: ObservableObject {
             do {
                 try process.run()
                 process.waitUntilExit()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let data = pipe.fileHandleForReading
+                    .readDataToEndOfFile()
 
                 struct GHPullRequest: Decodable {
                     let headRefName: String
                     let url: String
                     let number: Int
                     let title: String
+                    let state: String
+                    let reviewDecision: String?
                 }
 
                 let prs = try JSONDecoder().decode(
@@ -436,11 +473,15 @@ class WorktreeManager: ObservableObject {
                 )
                 var map: [String: PRInfo] = [:]
                 for pr in prs {
+                    // Skip closed-not-merged PRs
+                    if pr.state == "CLOSED" { continue }
                     map[pr.headRefName] = PRInfo(
                         number: pr.number,
                         url: pr.url,
                         title: pr.title,
-                        branch: pr.headRefName
+                        branch: pr.headRefName,
+                        merged: pr.state == "MERGED",
+                        reviewDecision: pr.reviewDecision ?? ""
                     )
                 }
 
@@ -452,6 +493,68 @@ class WorktreeManager: ObservableObject {
                     "Failed to fetch PRs: \(error.localizedDescription, privacy: .public)"
                 )
             }
+        }
+    }
+
+    func refreshGitSync(sessions: [Session]) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var statuses: [String: GitSyncStatus] = [:]
+            for session in sessions {
+                guard Self.isPerkupWorktree(session.projectPath)
+                else { continue }
+                let path = session.projectPath
+
+                // Get ahead of remote (unpushed commits)
+                let ahead = Self.gitCount(
+                    path: path,
+                    args: [
+                        "rev-list", "--count",
+                        "@{upstream}..HEAD",
+                    ]
+                )
+                // Get behind main
+                let behind = Self.gitCount(
+                    path: path,
+                    args: [
+                        "rev-list", "--count",
+                        "HEAD..origin/main",
+                    ]
+                )
+                // Check if tracking branch exists
+                let unpushed = ahead == nil
+
+                statuses[path] = GitSyncStatus(
+                    ahead: ahead ?? 0,
+                    behind: behind ?? 0,
+                    unpushed: unpushed
+                )
+            }
+            DispatchQueue.main.async {
+                self?.gitSyncStatus = statuses
+            }
+        }
+    }
+
+    private static func gitCount(
+        path: String, args: [String]
+    ) -> Int? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        proc.arguments = ["-C", path] + args
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            guard proc.terminationStatus == 0 else { return nil }
+            let data = pipe.fileHandleForReading
+                .readDataToEndOfFile()
+            let str = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return Int(str ?? "")
+        } catch {
+            return nil
         }
     }
 

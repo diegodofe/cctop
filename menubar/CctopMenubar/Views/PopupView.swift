@@ -21,6 +21,7 @@ struct PopupView: View {
     var navigate: NavigateController?
     @ObservedObject var overlayController: OverlayController = OverlayController()
     @ObservedObject var worktreeManager: WorktreeManager = WorktreeManager()
+    var onRefreshSessions: (() -> Void)?
     var initialTab: PopupTab = .active
     @State private var selectedTab: PopupTab = .active
     @State private var selectedIndex: Int?
@@ -48,6 +49,12 @@ struct PopupView: View {
 
     private var showTabs: Bool { true }
 
+    private var perkupSessions: [Session] {
+        sessions.filter {
+            WorktreeManager.isPerkupWorktree($0.projectPath)
+        }
+    }
+
     private var inReviewSessions: [Session] {
         Session.sorted(
             sessions.filter { session in
@@ -59,9 +66,9 @@ struct PopupView: View {
 
     private var activeSessions: [Session] {
         sessions.filter { session in
-            // Non-perkup sessions always stay in Active
+            // Only show perkup worktree sessions
             guard WorktreeManager.isPerkupWorktree(session.projectPath) else {
-                return true
+                return false
             }
             // Perkup sessions move to In Review if they have a PR
             return worktreeManager.openPRs[session.branch] == nil
@@ -71,8 +78,8 @@ struct PopupView: View {
     var body: some View {
         VStack(spacing: 0) {
             HeaderView(
-                sessions: sessions,
-                activeServerCount: sessions.filter {
+                sessions: perkupSessions,
+                activeServerCount: perkupSessions.filter {
                     worktreeManager.isServerRunning(for: $0.projectPath)
                 }.count
             )
@@ -146,12 +153,14 @@ struct PopupView: View {
         .onAppear {
             selectedTab = initialTab
             worktreeManager.refreshPRs()
+            worktreeManager.refreshGitSync(sessions: sessions)
             worktreeManager.refreshExternalServers(sessions: sessions)
         }
         .onReceive(
             Timer.publish(every: 60, on: .main, in: .common).autoconnect()
         ) { _ in
             worktreeManager.refreshPRs()
+            worktreeManager.refreshGitSync(sessions: sessions)
         }
         .onReceive(
             Timer.publish(every: 3, on: .main, in: .common).autoconnect()
@@ -269,6 +278,11 @@ struct PopupView: View {
             isServerLoading: worktreeManager.serverLoadingPaths
                 .contains(session.projectPath),
             onOpenPR: perkupPRAction(for: session),
+            prMerged: worktreeManager.openPRs[session.branch]?.merged ?? false,
+            prReviewDecision: worktreeManager.openPRs[session.branch]?.reviewDecision ?? "",
+            gitAhead: worktreeManager.gitSyncStatus[session.projectPath]?.ahead ?? 0,
+            gitBehind: worktreeManager.gitSyncStatus[session.projectPath]?.behind ?? 0,
+            gitUnpushed: worktreeManager.gitSyncStatus[session.projectPath]?.unpushed ?? false,
             onShip: perkupShipAction(for: session),
             isShipping: worktreeManager.shippingPaths
                 .contains(session.projectPath),
@@ -430,6 +444,8 @@ extension PopupView {
         Button {
             isRefreshing = true
             worktreeManager.refreshPRs()
+            worktreeManager.refreshGitSync(sessions: sessions)
+            onRefreshSessions?()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 isRefreshing = false
             }
@@ -806,7 +822,16 @@ extension PopupView {
     private func jumpToDisplayedSession(index: Int) {
         let list = currentTabSessions
         guard index < list.count else { return }
-        worktreeManager.openCursor(projectPath: list[index].projectPath)
+        worktreeManager.openCursor(
+            projectPath: list[index].projectPath
+        )
+        selectedIndex = nil
+        // Re-show panel after Cursor steals focus
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            NotificationCenter.default.post(
+                name: .sessionNeedsAttention, object: nil
+            )
+        }
     }
 
     private var currentTabSessions: [Session] {
@@ -831,6 +856,12 @@ extension PopupView {
         worktreeManager.openCursor(
             projectPath: currentTabSessions[index].projectPath
         )
+        selectedIndex = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            NotificationCenter.default.post(
+                name: .sessionNeedsAttention, object: nil
+            )
+        }
     }
 
     private func switchTab(to action: PanelNavAction) {
