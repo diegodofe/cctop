@@ -10,8 +10,9 @@ class OverlayController: ObservableObject {
     @Published var hideContent = false
 }
 
-enum PanelNavAction {
+enum PanelNavAction: Equatable {
     case up, down, confirm, escape, reset, toggleTab, previousTab, nextTab
+    case jumpTo(Int)
 }
 
 // MARK: - Card selection style
@@ -61,21 +62,31 @@ struct TabButtonView: View {
     let label: String
     let count: Int
     let isSelected: Bool
+    var hasUrgent: Bool = false
     let action: () -> Void
     @State private var isHovered = false
+
+    private var labelColor: Color {
+        if hasUrgent && !isSelected { return Color.statusPermission }
+        return isSelected ? Color.textPrimary : Color.textMuted
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Text(label)
                     .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Color.textPrimary : Color.textMuted)
+                    .foregroundStyle(labelColor)
                 Text("\(count)")
                     .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(isSelected ? Color.textPrimary : Color.textMuted)
+                    .foregroundStyle(labelColor)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
-                    .background(isSelected ? Color.textPrimary.opacity(0.12) : Color.textPrimary.opacity(0.05))
+                    .background(
+                        hasUrgent && !isSelected
+                            ? Color.statusPermission.opacity(0.15)
+                            : (isSelected ? Color.textPrimary.opacity(0.12) : Color.textPrimary.opacity(0.05))
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             }
             .padding(.horizontal, 10)
@@ -99,6 +110,7 @@ struct PanelContentView: View {
     @ObservedObject var navigate: NavigateController
     @ObservedObject private var themeManager = ThemeManager.shared
     @StateObject private var overlayController = OverlayController()
+    @StateObject private var worktreeManager = WorktreeManager()
 
     var body: some View {
         PopupView(
@@ -107,7 +119,8 @@ struct PanelContentView: View {
             updater: updater,
             pluginManager: pluginManager,
             navigate: navigate,
-            overlayController: overlayController
+            overlayController: overlayController,
+            worktreeManager: worktreeManager
         )
         .frame(width: 320)
         .background(Color.panelBackground)

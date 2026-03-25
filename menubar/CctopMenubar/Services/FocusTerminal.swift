@@ -71,8 +71,28 @@ private func executeFocusStrategy(_ strategy: FocusStrategy) {
                 configuration: NSWorkspace.OpenConfiguration()
             )
         } else {
-            // App not installed — open in Finder
-            NSWorkspace.shared.open(URL(fileURLWithPath: target))
+            // App not installed — try VS Code fork fallback (Cursor)
+            let fallbacks = [
+                "com.todesktop.230313mzl4w4u92",  // Cursor
+                "com.codeium.windsurf",             // Windsurf
+            ]
+            var opened = false
+            for fallbackID in fallbacks {
+                if fallbackID != bundleID,
+                   let fallbackURL = NSWorkspace.shared
+                    .urlForApplication(withBundleIdentifier: fallbackID) {
+                    NSWorkspace.shared.open(
+                        [URL(fileURLWithPath: target)],
+                        withApplicationAt: fallbackURL,
+                        configuration: NSWorkspace.OpenConfiguration()
+                    )
+                    opened = true
+                    break
+                }
+            }
+            if !opened {
+                NSWorkspace.shared.open(URL(fileURLWithPath: target))
+            }
         }
 
     case .iTerm2(let guid):

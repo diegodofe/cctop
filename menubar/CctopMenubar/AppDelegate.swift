@@ -40,6 +40,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         migrateLegacyPanelPosition()
         installHookBinaryIfNeeded()
         UNUserNotificationCenter.current().delegate = self
+
+        // Request notification permission on startup
+        let center = UNUserNotificationCenter.current()
+        let wasAccessory = NSApplication.shared.activationPolicy() == .accessory
+        if wasAccessory { NSApplication.shared.setActivationPolicy(.regular) }
+        center.requestAuthorization(options: [.alert, .sound]) { _, _ in
+            DispatchQueue.main.async {
+                if wasAccessory { NSApplication.shared.setActivationPolicy(.accessory) }
+            }
+        }
         notchController = NotchStatusController()
         historyManager = HistoryManager()
         sessionManager = SessionManager(historyManager: historyManager)
@@ -48,6 +58,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         setupStatusItem()
         hasNotch = NSScreen.builtin?.hasPhysicalNotch == true
+
+        // Auto-show panel when a session needs attention
+        NotificationCenter.default.addObserver(
+            forName: .sessionNeedsAttention,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, let panel = self.panel else { return }
+            if !panel.isVisible {
+                self.execute([.showPanel])
+            }
+        }
 
         let contentView = PanelContentView(
             sessionManager: sessionManager,
@@ -526,8 +548,9 @@ extension AppDelegate {
     }
 
     @MainActor private func jumpToSession(index: Int) {
-        guard index < navigateController.frozenSessions.count else { return }
-        focusTerminal(session: navigateController.frozenSessions[index])
+        let sorted = Session.sorted(sessionManager.sessions)
+        guard index < sorted.count else { return }
+        focusTerminal(session: sorted[index])
         handleEvent(.navigateConfirmed)
     }
 
@@ -539,7 +562,7 @@ extension AppDelegate {
             // Navigate: digit keys jump to session
             if self.navigateController.isActive,
                let char = event.characters, let digit = Int(char), digit >= 1, digit <= 9 {
-                DispatchQueue.main.async { self.jumpToSession(index: digit - 1) }
+                self.navigateController.navActionSubject.send(.jumpTo(digit - 1))
                 return nil
             }
 

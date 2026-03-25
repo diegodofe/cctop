@@ -16,8 +16,19 @@ struct SessionCardView: View {
     var navigateIndex: Int?
     var showSourceBadge = false
     var isSelected = false
+    var isPerkupWorktree = false
+    var onOpenCursor: (() -> Void)?
+    var onOpenChrome: (() -> Void)?
+    var onToggleServer: (() -> Void)?
+    var isServerRunning = false
+    var isServerLoading = false
+    var onOpenPR: (() -> Void)?
+    var onShip: (() -> Void)?
+    var isShipping = false
+    var onRemove: (() -> Void)?
+    var isRemoving = false
     @State private var isHovered = false
-    @State private var pulsing = false
+    @State private var flashOpacity: Double = 0
 
     var body: some View {
         HStack(spacing: 8) {
@@ -27,7 +38,7 @@ struct SessionCardView: View {
 
             // Content
             VStack(alignment: .leading, spacing: 2) {
-                // Row 1: project name + badges
+                // Row 1: project name + badges + action buttons
                 HStack(spacing: 6) {
                     Text(session.projectName)
                         .font(.system(size: 13, weight: .medium))
@@ -47,6 +58,64 @@ struct SessionCardView: View {
                         Text(session.sourceLabel)
                             .font(.system(size: 9))
                             .foregroundStyle(session.sourceBadgeColor)
+                    }
+
+                    // Action buttons (always visible)
+                    if isPerkupWorktree {
+                        HStack(spacing: 2) {
+                            if let prAction = onOpenPR {
+                                perkupActionButton(
+                                    systemImage: "arrow.triangle.pull",
+                                    action: prAction
+                                )
+                            }
+                            if isShipping {
+                                ProgressView()
+                                    .scaleEffect(0.5)
+                                    .frame(width: 16, height: 16)
+                            } else if let shipAction = onShip {
+                                perkupActionButton(
+                                    systemImage: "paperplane.fill",
+                                    action: shipAction
+                                )
+                            }
+                            if let cursorAction = onOpenCursor {
+                                perkupActionButton(
+                                    systemImage: "chevron.left.forwardslash.chevron.right",
+                                    action: cursorAction
+                                )
+                            }
+                            if let chromeAction = onOpenChrome {
+                                perkupActionButton(
+                                    systemImage: "globe",
+                                    action: chromeAction
+                                )
+                            }
+                            if isServerLoading {
+                                ProgressView()
+                                    .scaleEffect(0.5)
+                                    .frame(width: 16, height: 16)
+                            } else if let serverAction = onToggleServer {
+                                perkupActionButton(
+                                    systemImage: isServerRunning
+                                        ? "stop.fill" : "play.fill",
+                                    action: serverAction,
+                                    destructive: isServerRunning,
+                                    active: !isServerRunning
+                                )
+                            }
+                            if isRemoving {
+                                ProgressView()
+                                    .scaleEffect(0.5)
+                                    .frame(width: 16, height: 16)
+                            } else if let removeAction = onRemove {
+                                perkupActionButton(
+                                    systemImage: "trash",
+                                    action: removeAction,
+                                    destructive: true
+                                )
+                            }
+                        }
                     }
 
                     Spacer()
@@ -79,27 +148,22 @@ struct SessionCardView: View {
                 }
             }
 
-            // Right: status + time
-            VStack(alignment: .trailing, spacing: 1) {
-                statusLabel
-                TimelineView(.periodic(from: .now, by: 10)) { _ in
-                    Text(session.relativeTime)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.textMuted)
-                }
-            }
+            // Right: status
+            statusLabel
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 9)
+        .background(flashBackground)
         .cardSelectionStyle(
-            isSelected: isSelected, isHovered: isHovered, cornerRadius: 0
+            isSelected: isSelected, isHovered: false, cornerRadius: 0
         )
-        .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.15), value: isHovered)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(cardAccessibilityLabel)
-        .onAppear { updatePulsing(for: session.status) }
-        .onChange(of: session.status) { updatePulsing(for: $0) }
+        .onChange(of: session.status) { newStatus in
+            if newStatus.needsAttention {
+                triggerFlash(for: newStatus)
+            }
+        }
     }
 
     @ViewBuilder
@@ -113,14 +177,13 @@ struct SessionCardView: View {
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.white)
             }
+            .frame(width: 16)
             .accessibilityLabel("Press \(idx) to jump")
         } else {
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(session.status.color.opacity(accentOpacity))
                 .frame(width: 3)
-                .opacity(
-                    session.status.needsAttention && !pulsing ? 0.6 : 1.0
-                )
+                .frame(width: 16)
         }
     }
 
@@ -133,27 +196,26 @@ struct SessionCardView: View {
     }
 
     private var statusLabel: some View {
-        Text(statusLabelText)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(statusLabelColor)
+        statusIcon
     }
 
-    private var statusLabelText: String {
+    @ViewBuilder
+    private var statusIcon: some View {
         switch session.status {
-        case .idle: return "Idle"
-        case .working: return "Working"
-        case .compacting: return "Compacting"
-        case .waitingPermission: return "Permission"
-        case .waitingInput, .needsAttention: return "Waiting"
-        }
-    }
-
-    private var statusLabelColor: Color {
-        switch session.status {
-        case .waitingPermission: return Color.statusPermission
-        case .waitingInput, .needsAttention: return Color.statusAttention
-        case .working, .compacting: return Color.textSecondary
-        case .idle: return Color.textMuted
+        case .working, .compacting:
+            SpinningIcon()
+        case .waitingPermission:
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.statusPermission)
+        case .waitingInput, .needsAttention:
+            Image(systemName: "bubble.left.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.statusAttention)
+        case .idle:
+            Image(systemName: "moon.zzz.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.textMuted)
         }
     }
 
@@ -177,16 +239,84 @@ struct SessionCardView: View {
         return parts.joined(separator: ", ")
     }
 
-    private func updatePulsing(for status: SessionStatus) {
-        if status.needsAttention {
-            withAnimation(
-                .easeInOut(duration: 1.5).repeatForever(autoreverses: true)
-            ) {
-                pulsing = true
-            }
-        } else {
-            withAnimation(.default) { pulsing = false }
+    private var flashBackground: some View {
+        let color: Color = session.status == .waitingPermission
+            ? Color.statusPermission : Color.statusAttention
+        return color.opacity(flashOpacity)
+    }
+
+    private func triggerFlash(for status: SessionStatus) {
+        flashOpacity = 0.3
+        withAnimation(.easeOut(duration: 4.0)) {
+            flashOpacity = 0
         }
+    }
+
+    private func perkupActionButton(
+        systemImage: String,
+        action: @escaping () -> Void,
+        destructive: Bool = false,
+        active: Bool = false
+    ) -> some View {
+        PerkupIconButton(
+            systemImage: systemImage,
+            active: active,
+            destructive: destructive,
+            action: action
+        )
+    }
+}
+
+private struct SpinningIcon: View {
+    @State private var rotating = false
+
+    var body: some View {
+        Image(systemName: "arrow.triangle.2.circlepath")
+            .font(.system(size: 12))
+            .foregroundStyle(Color.statusGreen)
+            .rotationEffect(.degrees(rotating ? 360 : 0))
+            .onAppear {
+                withAnimation(
+                    .linear(duration: 1.5)
+                        .repeatForever(autoreverses: false)
+                ) {
+                    rotating = true
+                }
+            }
+    }
+}
+
+private struct PerkupIconButton: View {
+    let systemImage: String
+    var active = false
+    var destructive = false
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 9))
+            .foregroundStyle(foregroundColor)
+            .frame(width: 16, height: 16)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.textPrimary.opacity(hovered ? 0.12 : 0))
+            )
+            .contentShape(Rectangle())
+            .onHover { hovered = $0 }
+            .onTapGesture {
+                action()
+            }
+    }
+
+    private var foregroundColor: Color {
+        if active {
+            return hovered ? Color.statusGreen : Color.statusGreen.opacity(0.7)
+        }
+        if destructive {
+            return hovered ? Color.statusPermission : Color.statusPermission.opacity(0.7)
+        }
+        return hovered ? Color.textPrimary : Color.textMuted
     }
 }
 

@@ -295,7 +295,7 @@ struct Session: Codable, Identifiable {
 
     static func sorted(_ sessions: [Session]) -> [Session] {
         sessions.sorted {
-            ($0.status.sortOrder, $1.lastActivity) < ($1.status.sortOrder, $0.lastActivity)
+            $0.projectName.localizedCaseInsensitiveCompare($1.projectName) == .orderedAscending
         }
     }
 

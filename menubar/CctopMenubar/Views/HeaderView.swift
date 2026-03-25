@@ -80,17 +80,24 @@ struct WindowDragArea: NSViewRepresentable {
 
 struct HeaderView: View {
     let sessions: [Session]
+    var activeServerCount: Int = 0
 
     var body: some View {
         let counts = StatusCounts(sessions: sessions)
 
         HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(headerBarColor(counts: counts))
-                .frame(width: 3, height: 14)
-            Text("cctop")
+            Text("PerkUp")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.textPrimary)
+            if activeServerCount > 0 {
+                Text("\(activeServerCount) server\(activeServerCount == 1 ? "" : "s")")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.purple)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.purple.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
             Spacer()
             StatusChip(count: counts.permission, color: Color.statusPermission, categoryLabel: "need permission")
             StatusChip(count: counts.attention, color: Color.statusAttention, categoryLabel: "need attention")

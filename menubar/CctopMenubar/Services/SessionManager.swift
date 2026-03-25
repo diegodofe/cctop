@@ -70,13 +70,13 @@ class SessionManager: ObservableObject {
             logger.info("loadSessions: session count changed \(oldCount) -> \(self.sessions.count)")
         }
 
-        if UserDefaults.standard.bool(forKey: "notificationsEnabled") {
-            for session in sessions {
-                guard session.status.needsAttention,
-                      let oldStatus = oldStatuses[session.id],
-                      !oldStatus.needsAttention else { continue }
-                sendNotification(for: session)
-            }
+        // Play a sound when any session transitions to needing attention
+        for session in sessions {
+            guard session.status.needsAttention,
+                  let oldStatus = oldStatuses[session.id],
+                  !oldStatus.needsAttention else { continue }
+            playAttentionSound(for: session)
+            break  // One sound per poll cycle is enough
         }
         archiveAndRemoveDeadSessions(dead)
         cleanupOldFormatFiles(jsonFiles)
@@ -227,28 +227,72 @@ class SessionManager: ObservableObject {
         }
     }
 
+    private func playAttentionSound(for session: Session) {
+        // Show the panel so the user sees the flash
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .sessionNeedsAttention, object: nil
+            )
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+            proc.arguments = ["/System/Library/Sounds/Ping.aiff"]
+            try? proc.run()
+        }
+    }
+
     private func postNotification(for session: Session) {
-        let content = UNMutableNotificationContent()
-        content.title = session.displayName
+        let title = session.displayName
+        let body: String
         switch session.status {
         case .waitingPermission:
-            content.body = session.notificationMessage ?? "Permission needed"
+            body = session.notificationMessage ?? "Permission needed"
         case .waitingInput:
-            content.body = session.lastPrompt.map { "Waiting: \(String($0.prefix(80)))" } ?? "Waiting for input"
+            body = "Claude has finished responding"
         default:
-            content.body = "Needs attention"
+            body = "Needs attention"
         }
-        content.sound = .default
-        content.userInfo = ["sessionPID": session.pid.map(String.init) ?? ""]
 
-        let request = UNNotificationRequest(
-            identifier: "session-\(session.id)",
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error {
-                logger.error("Failed to send notification: \(error, privacy: .public)")
+        // Use terminal-notifier for proper notifications with app icon
+        // Clicking the notification activates Cursor
+        let cursorBundleID = "com.todesktop.230313mzl4w4u92"
+        DispatchQueue.global(qos: .userInitiated).async {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/terminal-notifier")
+            process.arguments = [
+                "-title", title,
+                "-message", body,
+                "-activate", cursorBundleID,
+                "-sound", "default",
+            ]
+            try? process.run()
+            process.waitUntilExit()
+
+            // Also speak the worktree number for audio feedback
+            let name = session.projectName
+            let number: String? = {
+                if let range = name.range(
+                    of: #"-(\d+)$"#, options: .regularExpression
+                ) {
+                    return String(name[range].dropFirst())
+                }
+                return nil
+            }()
+            if let number {
+                let sayProc = Process()
+                sayProc.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+                sayProc.arguments = [number]
+                try? sayProc.run()
+            } else {
+                let afplayProc = Process()
+                afplayProc.executableURL = URL(
+                    fileURLWithPath: "/usr/bin/afplay"
+                )
+                afplayProc.arguments = [
+                    "/System/Library/Sounds/Ping.aiff",
+                ]
+                try? afplayProc.run()
             }
         }
     }

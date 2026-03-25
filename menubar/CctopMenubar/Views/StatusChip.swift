@@ -3,12 +3,19 @@ import SwiftUI
 struct StatusChip: View {
     let count: Int
     let color: Color
+    var iconName: String?
     var categoryLabel: String = ""
 
     var body: some View {
         if count > 0 {
             HStack(spacing: 4) {
-                Circle().fill(color).frame(width: 5, height: 5)
+                if let icon = iconName {
+                    Image(systemName: icon)
+                        .font(.system(size: 6))
+                        .foregroundStyle(color)
+                } else {
+                    Circle().fill(color).frame(width: 5, height: 5)
+                }
                 Text("\(count)").font(.system(size: 10)).foregroundStyle(color)
             }
             .padding(.horizontal, 6)

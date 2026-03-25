@@ -14,6 +14,7 @@
 		B10000010000000000000001 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000020000000000000001 /* Session.swift */; };
 		B10000030000000000000001 /* SessionStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000040000000000000001 /* SessionStatus.swift */; };
 		C10000010000000000000001 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000001 /* SessionManager.swift */; };
+		C1AAAA010000000000000001 /* WorktreeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1AAAA020000000000000001 /* WorktreeManager.swift */; };
 		D10000010000000000000001 /* StatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000020000000000000001 /* StatusChip.swift */; };
 		D10000030000000000000001 /* HeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000040000000000000001 /* HeaderView.swift */; };
 		D10000050000000000000001 /* SessionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000060000000000000001 /* SessionCardView.swift */; };
@@ -108,6 +109,7 @@
 		B10000020000000000000001 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
 		B10000040000000000000001 /* SessionStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStatus.swift; sourceTree = "<group>"; };
 		C10000020000000000000001 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
+		C1AAAA020000000000000001 /* WorktreeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorktreeManager.swift; sourceTree = "<group>"; };
 		D1000000A000000000000001 /* QuitButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuitButton.swift; sourceTree = "<group>"; };
 		D10000020000000000000001 /* StatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusChip.swift; sourceTree = "<group>"; };
 		D10000040000000000000001 /* HeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderView.swift; sourceTree = "<group>"; };
@@ -218,6 +220,7 @@
 			isa = PBXGroup;
 			children = (
 				C10000020000000000000001 /* SessionManager.swift */,
+				C1AAAA020000000000000001 /* WorktreeManager.swift */,
 				HM0000020000000000000001 /* HistoryManager.swift */,
 				E10000020000000000000001 /* FocusTerminal.swift */,
 				SP0000020000000000000001 /* SparkleUpdater.swift */,
@@ -472,6 +475,7 @@
 				B10000010000000000000001 /* Session.swift in Sources */,
 				B10000030000000000000001 /* SessionStatus.swift in Sources */,
 				C10000010000000000000001 /* SessionManager.swift in Sources */,
+				C1AAAA010000000000000001 /* WorktreeManager.swift in Sources */,
 				D10000010000000000000001 /* StatusChip.swift in Sources */,
 				D10000030000000000000001 /* HeaderView.swift in Sources */,
 				D10000050000000000000001 /* SessionCardView.swift in Sources */,
@@ -653,7 +657,7 @@
 				INFOPLIST_KEY_NSMainStoryboardFile = "";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MARKETING_VERSION = 0.13.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.st0012.CctopMenubar;
+				PRODUCT_BUNDLE_IDENTIFIER = com.perkup.dash;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ENABLE_SPARKLE";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -678,7 +682,7 @@
 				INFOPLIST_KEY_NSMainStoryboardFile = "";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MARKETING_VERSION = 0.13.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.st0012.CctopMenubar;
+				PRODUCT_BUNDLE_IDENTIFIER = com.perkup.dash;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ENABLE_SPARKLE";
 				SWIFT_EMIT_LOC_STRINGS = YES;
