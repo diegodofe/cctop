@@ -115,6 +115,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @MainActor private func registerObservers() {
         let nc = NotificationCenter.default
+        // Start key monitor whenever app becomes active
+        nc.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.startNavKeyMonitor() }
         nc.addObserver(
             forName: UserDefaults.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.applyAppearance() }

@@ -274,12 +274,16 @@ class WorktreeManager: ObservableObject {
     }
 
     func openCursor(projectPath: String) {
-        let name = URL(fileURLWithPath: projectPath).lastPathComponent
-        DispatchQueue.global(qos: .userInitiated).async { [pwPath] in
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
-            proc.arguments = ["-l", "-c", "\(pwPath) o \(name)"]
-            try? proc.run()
+        // Use NSWorkspace to open the folder in Cursor (instant, no permissions needed)
+        let cursorBundleID = "com.todesktop.230313mzl4w4u92"
+        if let appURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: cursorBundleID
+        ) {
+            NSWorkspace.shared.open(
+                [URL(fileURLWithPath: projectPath)],
+                withApplicationAt: appURL,
+                configuration: NSWorkspace.OpenConfiguration()
+            )
         }
     }
 
