@@ -657,7 +657,7 @@
 				INFOPLIST_KEY_NSMainStoryboardFile = "";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MARKETING_VERSION = 0.13.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.perkup.dash;
+				PRODUCT_BUNDLE_IDENTIFIER = com.perkup.arborist;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ENABLE_SPARKLE";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -682,7 +682,7 @@
 				INFOPLIST_KEY_NSMainStoryboardFile = "";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MARKETING_VERSION = 0.13.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.perkup.dash;
+				PRODUCT_BUNDLE_IDENTIFIER = com.perkup.arborist;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ENABLE_SPARKLE";
 				SWIFT_EMIT_LOC_STRINGS = YES;

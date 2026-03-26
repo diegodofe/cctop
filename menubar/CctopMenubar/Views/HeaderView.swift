@@ -86,7 +86,7 @@ struct HeaderView: View {
         let counts = StatusCounts(sessions: sessions)
 
         HStack(spacing: 6) {
-            Text("PerkUp")
+            Text("Arborist")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.textPrimary)
             if activeServerCount > 0 {

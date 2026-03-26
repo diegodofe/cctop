@@ -67,7 +67,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         ) { [weak self] _ in
             guard let self, let panel = self.panel else { return }
             if !panel.isVisible {
-                self.execute([.showPanel])
+                // Show panel without stealing focus from current app
+                panel.orderFrontRegardless()
             }
         }
 
