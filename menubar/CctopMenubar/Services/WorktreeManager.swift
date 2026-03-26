@@ -86,73 +86,16 @@ class WorktreeManager: ObservableObject {
 
     func removeWorktree(projectPath: String) {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent
-        let repoRoot = "\(projectsDir)/perkup-app"
-
         removingPaths.insert(projectPath)
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            // Kill claude sessions for this worktree
-            let sessionsDir = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".cctop/sessions")
-            if let files = try? FileManager.default.contentsOfDirectory(
-                at: sessionsDir, includingPropertiesForKeys: nil
-            ) {
-                for file in files where file.pathExtension == "json"
-                    && !file.lastPathComponent.hasSuffix(".lock")
-                {
-                    if let data = try? Data(contentsOf: file),
-                       let json = try? JSONSerialization.jsonObject(
-                        with: data
-                       ) as? [String: Any],
-                       json["project_name"] as? String == name,
-                       let pid = json["pid"] as? Int
-                    {
-                        kill(Int32(pid), SIGTERM)
-                    }
-                }
-            }
-
-            // Close Cursor window
-            let closeScript = """
-            tell application "System Events"
-                tell process "Cursor"
-                    set windowList to every window \
-            whose title ends with "\(name)"
-                    repeat with w in windowList
-                        click button 1 of w
-                    end repeat
-                end tell
-            end tell
-            """
-            var error: NSDictionary?
-            NSAppleScript(source: closeScript)?
-                .executeAndReturnError(&error)
-
-            // Move node_modules to /tmp for fast cleanup
-            let nmPath = "\(projectPath)/node_modules"
-            let tmpPath = "/tmp/cctop-cleanup-\(ProcessInfo.processInfo.processIdentifier)-\(name)"
-            if FileManager.default.fileExists(atPath: nmPath) {
-                try? FileManager.default.moveItem(
-                    atPath: nmPath, toPath: tmpPath
-                )
-                DispatchQueue.global(qos: .background).async {
-                    try? FileManager.default.removeItem(atPath: tmpPath)
-                }
-            }
-
-            // Remove worktree
-            let removeScript = """
-            git -C "\(repoRoot)" worktree remove "\(projectPath)" --force 2>/dev/null
-            rm -rf "\(projectPath)" 2>/dev/null
-            git -C "\(repoRoot)" worktree prune
-            """
+        DispatchQueue.global(qos: .userInitiated).async {
+            [weak self, pwPath] in
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/bin/bash")
-            proc.arguments = ["-c", removeScript]
+            proc.arguments = ["-l", "-c", "\(pwPath) d \(name)"]
             try? proc.run()
             proc.waitUntilExit()
 
-            logger.info("Removed worktree: \(name, privacy: .public)")
             DispatchQueue.main.async {
                 self?.removingPaths.remove(projectPath)
             }
@@ -368,40 +311,13 @@ class WorktreeManager: ObservableObject {
         return nil
     }
 
-    // MARK: - Focus Chrome Tab
-
-    static func focusChromeTab(port: Int) {
-        let url = "http://localhost:\(port)"
-        let script = """
-        tell application "Google Chrome"
-            activate
-            set found to false
-            repeat with w in windows
-                set tabIndex to 0
-                repeat with t in tabs of w
-                    set tabIndex to tabIndex + 1
-                    if URL of t starts with "\(url)" then
-                        set active tab index of w to tabIndex
-                        set index of w to 1
-                        set found to true
-                        exit repeat
-                    end if
-                end repeat
-                if found then exit repeat
-            end repeat
-            if not found then
-                tell front window
-                    make new tab with properties {URL:"\(url)"}
-                end tell
-            end if
-        end tell
-        """
-        var error: NSDictionary?
-        NSAppleScript(source: script)?.executeAndReturnError(&error)
-        if let error {
-            logger.error(
-                "Chrome focus failed: \(error, privacy: .public)"
-            )
+    func openPR(projectPath: String) {
+        let name = URL(fileURLWithPath: projectPath).lastPathComponent
+        DispatchQueue.global(qos: .userInitiated).async { [pwPath] in
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+            proc.arguments = ["-l", "-c", "\(pwPath) pr \(name)"]
+            try? proc.run()
         }
     }
 
@@ -558,9 +474,5 @@ class WorktreeManager: ObservableObject {
         }
     }
 
-    static func openURL(_ urlString: String) {
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
-        }
-    }
+    // URL opening is handled by `pw pr` command
 }

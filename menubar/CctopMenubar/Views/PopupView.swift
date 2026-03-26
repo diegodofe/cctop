@@ -782,18 +782,10 @@ extension PopupView {
         guard worktreeManager.openPRs[session.branch] != nil else {
             return nil
         }
-        let name = URL(fileURLWithPath: session.projectPath).lastPathComponent
         return {
-            // Use pw pr command
-            DispatchQueue.global(qos: .userInitiated).async {
-                let proc = Process()
-                proc.executableURL = URL(fileURLWithPath: "/bin/bash")
-                proc.arguments = [
-                    "-l", "-c",
-                    "\(self.worktreeManager.pwPath) pr \(name)",
-                ]
-                try? proc.run()
-            }
+            worktreeManager.openPR(
+                projectPath: session.projectPath
+            )
             NSApp.deactivate()
         }
     }
