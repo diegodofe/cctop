@@ -269,8 +269,12 @@ struct SessionCardView: View {
                 let i = nextIdx()
                 perkupActionButton(
                     systemImage: prMerged
-                        ? "checkmark.circle.fill"
-                        : "arrow.triangle.pull",
+                        ? "arrow.triangle.merge"
+                        : prReviewDecision == "APPROVED"
+                            ? "checkmark.seal.fill"
+                            : prReviewDecision == "CHANGES_REQUESTED"
+                                ? "exclamationmark.bubble.fill"
+                                : "arrow.triangle.pull",
                     action: prAction,
                     destructive:
                         prReviewDecision == "CHANGES_REQUESTED",
