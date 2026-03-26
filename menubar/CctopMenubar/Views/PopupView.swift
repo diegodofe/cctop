@@ -5,6 +5,7 @@ import SwiftUI
 extension Notification.Name {
     static let layoutChanged = Notification.Name("layoutChanged")
     static let sessionNeedsAttention = Notification.Name("sessionNeedsAttention")
+    static let arboristFocusChanged = Notification.Name("arboristFocusChanged")
 }
 
 enum PopupTab {

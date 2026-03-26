@@ -152,6 +152,20 @@ struct PanelContentView: View {
             isFocused = false
             navigate.navActionSubject.send(.reset)
         }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .arboristFocusChanged
+            )
+        ) { notification in
+            if let focused = notification.userInfo?["focused"]
+                as? Bool
+            {
+                isFocused = focused
+                if !focused {
+                    navigate.navActionSubject.send(.reset)
+                }
+            }
+        }
     }
 }
 

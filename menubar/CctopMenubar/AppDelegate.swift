@@ -69,6 +69,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             if !panel.isVisible {
                 // Show panel without stealing focus from current app
                 panel.orderFrontRegardless()
+                // Ensure UI knows we're NOT focused
+                NotificationCenter.default.post(
+                    name: .arboristFocusChanged,
+                    object: nil,
+                    userInfo: ["focused": false]
+                )
             }
         }
 
