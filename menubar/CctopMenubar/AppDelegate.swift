@@ -101,15 +101,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @MainActor private func registerShortcuts() {
-        KeyboardShortcuts.onKeyUp(for: .togglePanel) { [weak self] in self?.togglePanel() }
-        KeyboardShortcuts.onKeyUp(for: .navigate) { [weak self] in
-            self?.focusLocation = NSEvent.mouseLocation
-            self?.handleEvent(.navigateShortcut)
+        KeyboardShortcuts.onKeyUp(for: .togglePanel) { [weak self] in
+            self?.togglePanel()
         }
-        navigateController.didConfirmSubject
-            .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.handleEvent(.navigateConfirmed) }
-            .store(in: &cancellables)
         registerObservers()
     }
 
@@ -189,17 +183,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @MainActor private func refreshStatusDisplay(counts: StatusCounts) {
         lastRenderedCounts = counts
-        statusItem.button?.image = MenubarIconRenderer.render(counts: counts)
+        // Keep the static tree icon — don't override with status bar
         notchController.update(counts: counts)
         updateNotchVisibility()
         statusItem.button?.setAccessibilityLabel(counts.accessibilityLabel)
     }
 
     private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            let image = NSImage(named: "MenubarIcon")
-            image?.isTemplate = true
+            let image = NSImage(
+                systemSymbolName: "tree.fill",
+                accessibilityDescription: "Arborist"
+            )
             button.image = image
             button.action = #selector(togglePanel)
             button.target = self
@@ -479,8 +475,8 @@ private let navKeyMap: [UInt16: PanelNavAction] = [
     48: .toggleTab,     // tab
     33: .previousTab,   // [ key
     30: .nextTab,       // ] key
-    123: .previousTab,  // left arrow
-    124: .nextTab,      // right arrow
+    123: .left,         // left arrow
+    124: .right,        // right arrow
 ]
 
 extension AppDelegate {
@@ -499,6 +495,7 @@ extension AppDelegate {
             switch action {
             case .showPanel:
                 notchVisibilityWork?.cancel()
+                NSApp.activate(ignoringOtherApps: true)
                 panel.makeKeyAndOrderFront(nil)
                 // Re-position after SwiftUI layout settles
                 DispatchQueue.main.async { [weak self] in

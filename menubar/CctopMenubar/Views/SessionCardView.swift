@@ -32,7 +32,9 @@ struct SessionCardView: View {
     var isShipping = false
     var onRemove: (() -> Void)?
     var isRemoving = false
+    var selectedActionIndex: Int = -1  // -1 = none, 0+ = button index
     @State private var isHovered = false
+    @State private var titleHovered = false
     @State private var flashOpacity: Double = 0
 
     var body: some View {
@@ -51,6 +53,11 @@ struct SessionCardView: View {
                             session.status == .idle
                                 ? Color.textDimmed : Color.textPrimary
                         )
+                        .underline(titleHovered)
+                        .onHover { titleHovered = $0 }
+                        .onTapGesture {
+                            onOpenCursor?()
+                        }
 
                     if session.subagentCount > 0 {
                         let count = session.subagentCount
@@ -67,66 +74,7 @@ struct SessionCardView: View {
 
                     // Action buttons (always visible)
                     if isPerkupWorktree {
-                        HStack(spacing: 2) {
-                            if let prAction = onOpenPR {
-                                perkupActionButton(
-                                    systemImage: prMerged
-                                        ? "checkmark.circle.fill"
-                                        : "arrow.triangle.pull",
-                                    action: prAction,
-                                    destructive:
-                                        prReviewDecision == "CHANGES_REQUESTED",
-                                    active: prReviewDecision == "APPROVED",
-                                    merged: prMerged
-                                )
-                            }
-                            if isShipping {
-                                ProgressView()
-                                    .scaleEffect(0.5)
-                                    .frame(width: 16, height: 16)
-                            } else if let shipAction = onShip {
-                                perkupActionButton(
-                                    systemImage: "paperplane.fill",
-                                    action: shipAction
-                                )
-                            }
-                            if let cursorAction = onOpenCursor {
-                                perkupActionButton(
-                                    systemImage: "chevron.left.forwardslash.chevron.right",
-                                    action: cursorAction
-                                )
-                            }
-                            if let chromeAction = onOpenChrome {
-                                perkupActionButton(
-                                    systemImage: "globe",
-                                    action: chromeAction
-                                )
-                            }
-                            if isServerLoading {
-                                ProgressView()
-                                    .scaleEffect(0.5)
-                                    .frame(width: 16, height: 16)
-                            } else if let serverAction = onToggleServer {
-                                perkupActionButton(
-                                    systemImage: isServerRunning
-                                        ? "stop.fill" : "play.fill",
-                                    action: serverAction,
-                                    destructive: isServerRunning,
-                                    active: !isServerRunning
-                                )
-                            }
-                            if isRemoving {
-                                ProgressView()
-                                    .scaleEffect(0.5)
-                                    .frame(width: 16, height: 16)
-                            } else if let removeAction = onRemove {
-                                perkupActionButton(
-                                    systemImage: "trash",
-                                    action: removeAction,
-                                    destructive: true
-                                )
-                            }
-                        }
+                        actionButtons
                     }
 
                     Spacer()
@@ -310,6 +258,78 @@ struct SessionCardView: View {
         }
     }
 
+    private var actionButtons: some View {
+        var idx = 0
+        func nextIdx() -> Int {
+            let i = idx; idx += 1; return i
+        }
+
+        return HStack(spacing: 2) {
+            if let prAction = onOpenPR {
+                let i = nextIdx()
+                perkupActionButton(
+                    systemImage: prMerged
+                        ? "checkmark.circle.fill"
+                        : "arrow.triangle.pull",
+                    action: prAction,
+                    destructive:
+                        prReviewDecision == "CHANGES_REQUESTED",
+                    active: prReviewDecision == "APPROVED",
+                    merged: prMerged,
+                    highlighted: selectedActionIndex == i
+                )
+            }
+            if isShipping {
+                ProgressView()
+                    .scaleEffect(0.5)
+                    .frame(width: 16, height: 16)
+            } else if let shipAction = onShip {
+                let i = nextIdx()
+                perkupActionButton(
+                    systemImage: "paperplane.fill",
+                    action: shipAction,
+                    highlighted: selectedActionIndex == i
+                )
+            }
+            if let chromeAction = onOpenChrome {
+                let i = nextIdx()
+                perkupActionButton(
+                    systemImage: "globe",
+                    action: chromeAction,
+                    highlighted: selectedActionIndex == i
+                )
+            }
+            if isServerLoading {
+                ProgressView()
+                    .scaleEffect(0.5)
+                    .frame(width: 16, height: 16)
+            } else if let serverAction = onToggleServer {
+                let i = nextIdx()
+                perkupActionButton(
+                    systemImage: isServerRunning
+                        ? "stop.fill" : "play.fill",
+                    action: serverAction,
+                    destructive: isServerRunning,
+                    active: !isServerRunning,
+                    highlighted: selectedActionIndex == i
+                )
+            }
+            if isRemoving {
+                ProgressView()
+                    .scaleEffect(0.5)
+                    .frame(width: 16, height: 16)
+            } else if let removeAction = onRemove {
+                let i = nextIdx()
+                perkupActionButton(
+                    systemImage: "trash",
+                    action: removeAction,
+                    destructive: true,
+                    highlighted: selectedActionIndex == i
+                )
+            }
+        }
+    }
+
     private func gitBadge(
         icon: String, text: String, color: Color
     ) -> some View {
@@ -331,12 +351,14 @@ struct SessionCardView: View {
         action: @escaping () -> Void,
         destructive: Bool = false,
         active: Bool = false,
-        merged: Bool = false
+        merged: Bool = false,
+        highlighted: Bool = false
     ) -> some View {
         PerkupIconButton(
             systemImage: systemImage,
             active: active,
             merged: merged,
+            highlighted: highlighted,
             destructive: destructive,
             action: action
         )
@@ -366,6 +388,7 @@ private struct PerkupIconButton: View {
     let systemImage: String
     var active = false
     var merged = false
+    var highlighted = false
     var destructive = false
     let action: () -> Void
     @State private var hovered = false
@@ -377,7 +400,18 @@ private struct PerkupIconButton: View {
             .frame(width: 16, height: 16)
             .background(
                 RoundedRectangle(cornerRadius: 3)
-                    .fill(Color.textPrimary.opacity(hovered ? 0.12 : 0))
+                    .fill(
+                        Color.textPrimary.opacity(
+                            highlighted ? 0.2
+                                : hovered ? 0.12 : 0
+                        )
+                    )
+            )
+            .overlay(
+                highlighted
+                    ? RoundedRectangle(cornerRadius: 3)
+                        .stroke(Color.statusGreen.opacity(0.6), lineWidth: 1)
+                    : nil
             )
             .contentShape(Rectangle())
             .onHover { hovered = $0 }

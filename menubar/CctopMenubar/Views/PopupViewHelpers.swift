@@ -11,7 +11,8 @@ class OverlayController: ObservableObject {
 }
 
 enum PanelNavAction: Equatable {
-    case up, down, confirm, escape, reset, toggleTab, previousTab, nextTab
+    case up, down, left, right, confirm, escape, reset
+    case toggleTab, previousTab, nextTab
     case jumpTo(Int)
 }
 

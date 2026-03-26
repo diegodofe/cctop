@@ -94,12 +94,19 @@ struct PanelCoordinator {
             )
 
         case (.normal, .menubarIconClicked(let appIsActive, onDifferentScreen: false)):
-            var actions: [PanelAction] = [.dismissPanel]
-            if appIsActive { actions.append(.restorePreviousApp) }
-            return Result(
-                state: PanelState(mode: .hidden),
-                actions: actions
-            )
+            if appIsActive {
+                // App is focused — hide it
+                return Result(
+                    state: PanelState(mode: .hidden),
+                    actions: [.dismissPanel, .restorePreviousApp]
+                )
+            } else {
+                // App is visible but not focused — just focus it
+                return Result(
+                    state: state,
+                    actions: [.activateApp]
+                )
+            }
 
         case (.normal, .escape):
             return Result(state: state, actions: [.postNavAction(.escape)])

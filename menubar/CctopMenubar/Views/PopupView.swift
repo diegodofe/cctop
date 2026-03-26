@@ -26,6 +26,7 @@ struct PopupView: View {
     var initialTab: PopupTab = .active
     @State private var selectedTab: PopupTab = .active
     @State private var selectedIndex: Int?
+    @State private var selectedAction: Int = -1  // -1 = row itself, 0+ = action button index
     @State private var gearHovered = false
     @State private var versionHovered = false
     @State private var shortcutHovered = false
@@ -150,7 +151,10 @@ struct PopupView: View {
             guard overlayController.active == nil else { return }
             handleNavAction(action)
         }
-        .onChange(of: selectedTab) { _ in selectedIndex = nil }
+        .onChange(of: selectedTab) { _ in
+            selectedIndex = nil
+            selectedAction = -1
+        }
         .onReceive(
             NotificationCenter.default.publisher(
                 for: .sessionNeedsAttention
@@ -206,7 +210,7 @@ struct PopupView: View {
             )
             Spacer()
             if isFocused {
-                Text("[]: tabs  ↑↓: select  1-9: jump")
+                Text("[]: tabs  ↑↓: rows  ←→: actions  1-9: jump")
                     .font(.system(size: 9))
                     .foregroundStyle(Color.textMuted)
             }
@@ -282,7 +286,7 @@ struct PopupView: View {
             session: session,
             navigateIndex: isFocused ? index + 1 : nil,
             showSourceBadge: hasMultipleSources,
-            isSelected: selectedIndex == index,
+            isSelected: isFocused && selectedIndex == index,
             isPerkupWorktree: WorktreeManager.isPerkupWorktree(
                 session.projectPath
             ),
@@ -307,7 +311,9 @@ struct PopupView: View {
                 .contains(session.projectPath),
             onRemove: perkupRemoveAction(for: session),
             isRemoving: worktreeManager.removingPaths
-                .contains(session.projectPath)
+                .contains(session.projectPath),
+            selectedActionIndex: isFocused && selectedIndex == index
+                ? selectedAction : -1
         )
         .contextMenu {
             Button {
@@ -821,10 +827,32 @@ extension PopupView {
 
     private func handleNavAction(_ action: PanelNavAction) {
         switch action {
-        case .up: moveSelection(by: -1)
-        case .down: moveSelection(by: 1)
+        case .up:
+            moveSelection(by: -1)
+            selectedAction = -1  // Reset to row level
+        case .down:
+            moveSelection(by: 1)
+            selectedAction = -1
+        case .left:
+            if selectedAction > -1 {
+                selectedAction -= 1
+            }
+        case .right:
+            if let idx = selectedIndex, idx < currentTabSessions.count {
+                let maxAction = actionCount(
+                    for: currentTabSessions[idx]
+                ) - 1
+                if selectedAction < maxAction {
+                    selectedAction += 1
+                }
+            }
         case .confirm: confirmSelection()
-        case .escape, .reset: selectedIndex = nil
+        case .escape, .reset:
+            if selectedAction > -1 {
+                selectedAction = -1  // Back to row level first
+            } else {
+                selectedIndex = nil
+            }
         case .toggleTab, .previousTab, .nextTab: switchTab(to: action)
         case .jumpTo(let index): jumpToDisplayedSession(index: index)
         }
@@ -861,17 +889,81 @@ extension PopupView {
         } ?? (delta > 0 ? 0 : count - 1)
     }
 
+    /// Returns ordered list of action names for a session
+    private func actionNames(
+        for session: Session
+    ) -> [String] {
+        var actions: [String] = []
+        if worktreeManager.openPRs[session.branch] != nil {
+            actions.append("pr")
+        }
+        if WorktreeManager.isPerkupWorktree(session.projectPath)
+            && worktreeManager.openPRs[session.branch] == nil
+            && !worktreeManager.shippingPaths.contains(session.projectPath)
+        {
+            actions.append("ship")
+        }
+        if WorktreeManager.isPerkupWorktree(session.projectPath) {
+            actions.append("chrome")
+            actions.append("server")
+            actions.append("delete")
+        }
+        return actions
+    }
+
+    private func actionCount(for session: Session) -> Int {
+        actionNames(for: session).count
+    }
+
     private func confirmSelection() {
         guard let index = selectedIndex,
               index < currentTabSessions.count else { return }
-        worktreeManager.openCursor(
-            projectPath: currentTabSessions[index].projectPath
-        )
-        selectedIndex = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            NotificationCenter.default.post(
-                name: .sessionNeedsAttention, object: nil
+        let session = currentTabSessions[index]
+
+        if selectedAction == -1 {
+            // Row level — open Cursor
+            worktreeManager.openCursor(
+                projectPath: session.projectPath
             )
+            selectedIndex = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NotificationCenter.default.post(
+                    name: .sessionNeedsAttention, object: nil
+                )
+            }
+        } else {
+            // Action level — execute the specific action
+            let actions = actionNames(for: session)
+            guard selectedAction < actions.count else { return }
+            switch actions[selectedAction] {
+            case "pr":
+                worktreeManager.openPR(
+                    projectPath: session.projectPath
+                )
+            case "ship":
+                shipSessionPath = session.projectPath
+            case "chrome":
+                worktreeManager.openWeb(
+                    projectPath: session.projectPath
+                )
+            case "server":
+                if worktreeManager.isServerRunning(
+                    for: session.projectPath
+                ) {
+                    worktreeManager.stopDevServer(
+                        projectPath: session.projectPath
+                    )
+                } else {
+                    worktreeManager.startDevServer(
+                        projectPath: session.projectPath
+                    )
+                }
+            case "delete":
+                worktreeManager.removeWorktree(
+                    projectPath: session.projectPath
+                )
+            default: break
+            }
         }
     }
 

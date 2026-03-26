@@ -116,23 +116,9 @@ struct SettingsSection: View {
             .onChange(of: appearanceMode) { _ in UserDefaults.standard.synchronize() }
             Divider().padding(.horizontal, 8)
             sectionHeader("Shortcuts")
-            settingsRow("Toggle Panel") {
+            settingsRow("Toggle Arborist") {
                 ShortcutBadge(name: .togglePanel)
             }
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Navigate")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.textPrimary)
-                    Text("Jump to sessions by number")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.textMuted)
-                }
-                Spacer()
-                ShortcutBadge(name: .navigate)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
             Divider().padding(.horizontal, 8)
 
             sectionHeader("General")
