@@ -28,6 +28,14 @@ struct SessionCardView: View {
     var gitAhead: Int = 0
     var gitBehind: Int = 0
     var gitUnpushed = false
+    var gitStaged: Int = 0
+    var gitUnstaged: Int = 0
+    var onReview: (() -> Void)?
+    var isReviewing = false
+    var onSync: (() -> Void)?
+    var isSyncing = false
+    var onPush: (() -> Void)?
+    var isPushing = false
     var onShip: (() -> Void)?
     var isShipping = false
     var onRemove: (() -> Void)?
@@ -109,12 +117,28 @@ struct SessionCardView: View {
                                 color: .statusAttention
                             )
                         }
+                        if gitUnstaged > 0 {
+                            gitBadge(
+                                icon: "pencil",
+                                text: "\(gitUnstaged)",
+                                color: .orange
+                            )
+                        }
+                        if gitStaged > 0 {
+                            gitBadge(
+                                icon: "checkmark.square",
+                                text: "\(gitStaged)",
+                                color: .statusGreen
+                            )
+                        }
                         if !gitUnpushed && gitAhead == 0
                             && gitBehind == 0
+                            && gitStaged == 0
+                            && gitUnstaged == 0
                         {
                             gitBadge(
                                 icon: "checkmark",
-                                text: "synced",
+                                text: "clean",
                                 color: .textMuted
                             )
                         }
@@ -285,13 +309,25 @@ struct SessionCardView: View {
             }
             if isShipping {
                 ProgressView()
-                    .scaleEffect(0.5)
+                    .scaleEffect(0.4)
                     .frame(width: 16, height: 16)
             } else if let shipAction = onShip {
                 let i = nextIdx()
                 perkupActionButton(
                     systemImage: "paperplane.fill",
                     action: shipAction,
+                    highlighted: selectedActionIndex == i
+                )
+            }
+            if isReviewing {
+                ProgressView()
+                    .scaleEffect(0.4)
+                    .frame(width: 16, height: 16)
+            } else if let reviewAction = onReview {
+                let i = nextIdx()
+                perkupActionButton(
+                    systemImage: "magnifyingglass",
+                    action: reviewAction,
                     highlighted: selectedActionIndex == i
                 )
             }
@@ -303,9 +339,33 @@ struct SessionCardView: View {
                     highlighted: selectedActionIndex == i
                 )
             }
+            if isSyncing {
+                ProgressView()
+                    .scaleEffect(0.4)
+                    .frame(width: 16, height: 16)
+            } else if let syncAction = onSync {
+                let i = nextIdx()
+                perkupActionButton(
+                    systemImage: "arrow.down.circle",
+                    action: syncAction,
+                    highlighted: selectedActionIndex == i
+                )
+            }
+            if isPushing {
+                ProgressView()
+                    .scaleEffect(0.4)
+                    .frame(width: 16, height: 16)
+            } else if let pushAction = onPush {
+                let i = nextIdx()
+                perkupActionButton(
+                    systemImage: "arrow.up.circle",
+                    action: pushAction,
+                    highlighted: selectedActionIndex == i
+                )
+            }
             if isServerLoading {
                 ProgressView()
-                    .scaleEffect(0.5)
+                    .scaleEffect(0.4)
                     .frame(width: 16, height: 16)
             } else if let serverAction = onToggleServer {
                 let i = nextIdx()
@@ -320,7 +380,7 @@ struct SessionCardView: View {
             }
             if isRemoving {
                 ProgressView()
-                    .scaleEffect(0.5)
+                    .scaleEffect(0.4)
                     .frame(width: 16, height: 16)
             } else if let removeAction = onRemove {
                 let i = nextIdx()
@@ -369,7 +429,7 @@ struct SessionCardView: View {
     }
 }
 
-private struct SpinningIcon: View {
+struct SpinningIcon: View {
     @State private var rotating = false
 
     var body: some View {

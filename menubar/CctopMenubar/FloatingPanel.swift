@@ -8,7 +8,8 @@ import AppKit
 class FloatingPanel: NSPanel {
     weak var panelDelegate: FloatingPanelDelegate?
     /// Height of the header drag zone (matches HeaderView padding + content).
-    private let headerDragHeight: CGFloat = 44
+    private let headerDragHeight: CGFloat = 32
+
 
     override init(
         contentRect: NSRect,

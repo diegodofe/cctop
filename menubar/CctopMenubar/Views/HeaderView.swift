@@ -81,34 +81,93 @@ struct WindowDragArea: NSViewRepresentable {
 struct HeaderView: View {
     let sessions: [Session]
     var activeServerCount: Int = 0
+    @ObservedObject var wellness: WellnessManager
 
     var body: some View {
         let counts = StatusCounts(sessions: sessions)
 
         HStack(spacing: 6) {
+            // Left: title + servers + session statuses
             Text("Arborist")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.textPrimary)
+                .overlay(WindowDragArea())
             if activeServerCount > 0 {
-                Text("\(activeServerCount) server\(activeServerCount == 1 ? "" : "s")")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.purple)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.purple.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                StatusChip(
+                    count: activeServerCount,
+                    color: .purple,
+                    iconName: "server.rack",
+                    categoryLabel: "servers running"
+                )
             }
+            StatusChip(
+                count: counts.permission,
+                color: Color.statusPermission,
+                iconName: "exclamationmark.triangle.fill",
+                categoryLabel: "need permission"
+            )
+            StatusChip(
+                count: counts.attention,
+                color: Color.statusAttention,
+                iconName: "bubble.left.fill",
+                categoryLabel: "need attention"
+            )
+            StatusChip(
+                count: counts.working,
+                color: Color.statusGreen,
+                iconName: "arrow.triangle.2.circlepath",
+                categoryLabel: "working"
+            )
+            StatusChip(
+                count: counts.idle,
+                color: Color.textMuted,
+                iconName: "moon.zzz.fill",
+                categoryLabel: "idle"
+            )
+
             Spacer()
-            StatusChip(count: counts.permission, color: Color.statusPermission, categoryLabel: "need permission")
-            StatusChip(count: counts.attention, color: Color.statusAttention, categoryLabel: "need attention")
-            StatusChip(count: counts.working, color: Color.statusGreen, categoryLabel: "working")
-            StatusChip(count: counts.idle, color: Color.textMuted, categoryLabel: "idle")
+
+            // Right: wellness indicators
+            if wellness.isWorkdayActive {
+                Image(systemName: "eye")
+                    .font(.system(size: 9))
+                    .foregroundStyle(wellness.eyeBreakColor)
+                Image(systemName: "drop.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(wellness.waterColor)
+                Text(wellness.sessionText)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.textMuted)
+            }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .overlay(WindowDragArea())
+        .padding(.vertical, 10)
     }
+    private func wellnessChip(
+        icon: String,
+        text: String,
+        color: Color,
+        pulse: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 8))
+                Text(text)
+                    .font(.system(size: 9, weight: .medium))
+            }
+            .foregroundStyle(color)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(color.opacity(pulse ? 0.15 : 0.07))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+        .buttonStyle(.plain)
+    }
+
     private func headerBarColor(counts: StatusCounts) -> Color {
+        // unused but kept for compatibility
         if counts.permission > 0 {
             return Color.statusPermission
         }
@@ -122,6 +181,34 @@ struct HeaderView: View {
     }
 }
 
+private struct WellnessControlButton: View {
+    let icon: String
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 8))
+                .foregroundStyle(
+                    hovered ? Color.textPrimary : Color.textMuted
+                )
+                .frame(width: 16, height: 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(
+                            Color.textPrimary.opacity(
+                                hovered ? 0.12 : 0
+                            )
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+    }
+}
+
 #Preview("Normal") {
-    HeaderView(sessions: Session.qaShowcase).frame(width: 320).padding()
+    HeaderView(sessions: Session.qaShowcase, wellness: WellnessManager())
+        .frame(width: 320).padding()
 }

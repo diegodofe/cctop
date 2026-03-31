@@ -315,6 +315,104 @@ class WorktreeManager: ObservableObject {
         return nil
     }
 
+    @Published var reviewingPaths: Set<String> = []
+    @Published var syncingPaths: Set<String> = []
+    @Published var pushingPaths: Set<String> = []
+    @Published var isRefreshingAll = false
+
+    func startReview(projectPath: String) {
+        let name = URL(fileURLWithPath: projectPath).lastPathComponent
+        reviewingPaths.insert(projectPath)
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            [weak self, pwPath] in
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+            proc.arguments = [
+                "-l", "-c", "\(pwPath) review \(name)",
+            ]
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = pipe
+            try? proc.run()
+            proc.waitUntilExit()
+
+            DispatchQueue.main.async {
+                self?.reviewingPaths.remove(projectPath)
+            }
+        }
+    }
+
+    func syncWorktree(projectPath: String) {
+        let name = URL(fileURLWithPath: projectPath).lastPathComponent
+        syncingPaths.insert(projectPath)
+
+        runPwCommand(
+            command: "sync", name: name, path: projectPath,
+            loadingSet: \.syncingPaths
+        )
+    }
+
+    func pushWorktree(projectPath: String) {
+        let name = URL(fileURLWithPath: projectPath).lastPathComponent
+        pushingPaths.insert(projectPath)
+
+        runPwCommand(
+            command: "push", name: name, path: projectPath,
+            loadingSet: \.pushingPaths
+        )
+    }
+
+    private func runPwCommand(
+        command: String,
+        name: String,
+        path: String,
+        loadingSet: ReferenceWritableKeyPath<
+            WorktreeManager, Set<String>
+        >
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            [weak self, pwPath] in
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+            proc.arguments = [
+                "-l", "-c", "\(pwPath) \(command) \(name)",
+            ]
+            let pipe = Pipe()
+            proc.standardOutput = pipe
+            proc.standardError = pipe
+            try? proc.run()
+            proc.waitUntilExit()
+
+            let data = pipe.fileHandleForReading
+                .readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8)
+                ?? ""
+            let success = proc.terminationStatus == 0
+
+            DispatchQueue.main.async {
+                self?[keyPath: loadingSet].remove(path)
+                if success {
+                    if let sessions = self?.lastSessions {
+                        self?.refreshGitSync(sessions: sessions)
+                    }
+                } else if output.contains("CONFLICT") {
+                    self?.lastError =
+                        "\(name): merge conflicts with main"
+                } else if output.contains("uncommitted") {
+                    self?.lastError =
+                        "\(name): uncommitted changes"
+                } else {
+                    self?.lastError =
+                        "\(name): \(command) failed"
+                }
+            }
+        }
+    }
+
+    /// Store last sessions for post-sync refresh
+    var lastSessions: [Session]?
+
     func openPR(projectPath: String) {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent
         DispatchQueue.global(qos: .userInitiated).async { [pwPath] in
@@ -344,9 +442,11 @@ class WorktreeManager: ObservableObject {
     }
 
     struct GitSyncStatus {
-        let ahead: Int   // commits ahead of remote
-        let behind: Int  // commits behind main
+        let ahead: Int    // commits ahead of remote
+        let behind: Int   // commits behind main
         let unpushed: Bool
+        let staged: Int   // number of staged files
+        let unstaged: Int // number of modified/untracked files
     }
 
     /// Map of branch name -> PR info
@@ -416,13 +516,108 @@ class WorktreeManager: ObservableObject {
         }
     }
 
+    func refreshAll(
+        sessions: [Session],
+        reloadSessions: (() -> Void)? = nil
+    ) {
+        isRefreshingAll = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            // PRs
+            self?.refreshPRs()
+            // Git sync (includes fetch)
+            self?.refreshGitSyncSync(sessions: sessions)
+            // Sessions
+            DispatchQueue.main.async {
+                reloadSessions?()
+                self?.isRefreshingAll = false
+            }
+        }
+    }
+
+    /// Synchronous version for use in background thread
+    private func refreshGitSyncSync(sessions: [Session]) {
+        lastSessions = sessions
+        var statuses: [String: GitSyncStatus] = [:]
+        for session in sessions {
+            guard Self.isPerkupWorktree(session.projectPath)
+            else { continue }
+            let path = session.projectPath
+
+            let fetchProc = Process()
+            fetchProc.executableURL = URL(
+                fileURLWithPath: "/usr/bin/git"
+            )
+            fetchProc.arguments = [
+                "-C", path, "fetch", "origin", "--quiet",
+            ]
+            fetchProc.standardOutput = Pipe()
+            fetchProc.standardError = Pipe()
+            try? fetchProc.run()
+            fetchProc.waitUntilExit()
+
+            let ahead = Self.gitCount(
+                path: path,
+                args: ["rev-list", "--count", "@{upstream}..HEAD"]
+            )
+            let behind = Self.gitCount(
+                path: path,
+                args: ["rev-list", "--count", "HEAD..origin/main"]
+            )
+            let unpushed = ahead == nil
+
+            let statusOutput = Self.gitOutput(
+                path: path, args: ["status", "--porcelain"]
+            )
+            var staged = 0
+            var unstaged = 0
+            for line in statusOutput.components(
+                separatedBy: .newlines
+            ) where line.count >= 2 {
+                let idx = line.index(line.startIndex, offsetBy: 0)
+                let wt = line.index(line.startIndex, offsetBy: 1)
+                if line[idx] != " " && line[idx] != "?" {
+                    staged += 1
+                }
+                if line[wt] != " " || line[idx] == "?" {
+                    unstaged += 1
+                }
+            }
+
+            statuses[path] = GitSyncStatus(
+                ahead: ahead ?? 0,
+                behind: behind ?? 0,
+                unpushed: unpushed,
+                staged: staged,
+                unstaged: unstaged
+            )
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.gitSyncStatus = statuses
+        }
+    }
+
     func refreshGitSync(sessions: [Session]) {
+        lastSessions = sessions
         DispatchQueue.global(qos: .utility).async { [weak self] in
             var statuses: [String: GitSyncStatus] = [:]
             for session in sessions {
                 guard Self.isPerkupWorktree(session.projectPath)
                 else { continue }
                 let path = session.projectPath
+
+                // Fetch latest refs (quick, only updates refs)
+                let fetchProc = Process()
+                fetchProc.executableURL = URL(
+                    fileURLWithPath: "/usr/bin/git"
+                )
+                fetchProc.arguments = [
+                    "-C", path, "fetch", "origin",
+                    "--quiet",
+                ]
+                fetchProc.standardOutput = Pipe()
+                fetchProc.standardError = Pipe()
+                try? fetchProc.run()
+                fetchProc.waitUntilExit()
 
                 // Get ahead of remote (unpushed commits)
                 let ahead = Self.gitCount(
@@ -443,15 +638,61 @@ class WorktreeManager: ObservableObject {
                 // Check if tracking branch exists
                 let unpushed = ahead == nil
 
+                // Count staged and unstaged changes
+                let statusOutput = Self.gitOutput(
+                    path: path,
+                    args: ["status", "--porcelain"]
+                )
+                var staged = 0
+                var unstaged = 0
+                for line in statusOutput.components(
+                    separatedBy: .newlines
+                ) where line.count >= 2 {
+                    let idx = line.index(
+                        line.startIndex, offsetBy: 0
+                    )
+                    let wt = line.index(
+                        line.startIndex, offsetBy: 1
+                    )
+                    if line[idx] != " " && line[idx] != "?" {
+                        staged += 1
+                    }
+                    if line[wt] != " " || line[idx] == "?" {
+                        unstaged += 1
+                    }
+                }
+
                 statuses[path] = GitSyncStatus(
                     ahead: ahead ?? 0,
                     behind: behind ?? 0,
-                    unpushed: unpushed
+                    unpushed: unpushed,
+                    staged: staged,
+                    unstaged: unstaged
                 )
             }
             DispatchQueue.main.async {
                 self?.gitSyncStatus = statuses
             }
+        }
+    }
+
+    private static func gitOutput(
+        path: String, args: [String]
+    ) -> String {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        proc.arguments = ["-C", path] + args
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            let data = pipe.fileHandleForReading
+                .readDataToEndOfFile()
+            return String(data: data, encoding: .utf8) ?? ""
+        } catch {
+            return ""
         }
     }
 

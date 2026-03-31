@@ -36,6 +36,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Prevent AppKit from crashing on SwiftUI layout exceptions
+        UserDefaults.standard.set(false, forKey: "NSApplicationCrashOnExceptions")
+
+        // Crash logging — write to ~/.cctop/logs/_crash.log
+        NSSetUncaughtExceptionHandler { exception in
+            let log = """
+            CRASH: \(Date())
+            Name: \(exception.name.rawValue)
+            Reason: \(exception.reason ?? "unknown")
+            Stack: \(exception.callStackSymbols.joined(separator: "\n"))
+            """
+            let path = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".cctop/logs/_crash.log")
+            try? log.write(to: path, atomically: true, encoding: .utf8)
+        }
+        signal(SIGSEGV) { _ in
+            let log = "CRASH: \(Date()) — SIGSEGV\n"
+            let path = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".cctop/logs/_crash.log").path
+            try? log.write(toFile: path, atomically: true, encoding: .utf8)
+        }
+
         UserDefaults.standard.register(defaults: ["notificationsEnabled": true])
         migrateLegacyPanelPosition()
         installHookBinaryIfNeeded()

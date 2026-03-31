@@ -22,13 +22,13 @@ struct PopupView: View {
     var navigate: NavigateController?
     @ObservedObject var overlayController: OverlayController = OverlayController()
     @ObservedObject var worktreeManager: WorktreeManager = WorktreeManager()
+    @ObservedObject var wellnessManager: WellnessManager = WellnessManager()
     var isFocused = false
     var onRefreshSessions: (() -> Void)?
     var initialTab: PopupTab = .active
     @State private var selectedTab: PopupTab = .active
     @State private var selectedIndex: Int?
     @State private var selectedAction: Int = -1  // -1 = row itself, 0+ = action button index
-    @State private var gearHovered = false
     @State private var versionHovered = false
     @State private var shortcutHovered = false
     @State private var ocBannerInstalled = false
@@ -36,10 +36,7 @@ struct PopupView: View {
     @State private var piBannerInstalled = false
     @State private var showNewWorktreeInput = false
     @State private var newBranchName = ""
-    @State private var newWorktreeHovered = false
     @State private var shipSessionPath: String?
-    @State private var refreshHovered = false
-    @State private var isRefreshing = false
     @AppStorage("ocBannerDismissed") private var ocBannerDismissed = false
     @AppStorage("piBannerDismissed") private var piBannerDismissed = false
 
@@ -81,10 +78,25 @@ struct PopupView: View {
     var body: some View {
         VStack(spacing: 0) {
             HeaderView(
-                sessions: perkupSessions,
-                activeServerCount: perkupSessions.filter {
-                    worktreeManager.isServerRunning(for: $0.projectPath)
-                }.count
+                sessions: groupSessions(perkupSessions).map {
+                    group in
+                    // Use the most urgent status from any session in the group
+                    let allSessions = [group.primary] + group.subSessions
+                    let mostUrgent = allSessions.min {
+                        $0.status.sortOrder < $1.status.sortOrder
+                    }
+                    var representative = group.primary
+                    if let urgent = mostUrgent {
+                        representative.status = urgent.status
+                    }
+                    return representative
+                },
+                activeServerCount: groupSessions(perkupSessions).filter {
+                    worktreeManager.isServerRunning(
+                        for: $0.primary.projectPath
+                    )
+                }.count,
+                wellness: wellnessManager
             )
             if let error = worktreeManager.lastError {
                 HStack(spacing: 4) {
@@ -113,15 +125,20 @@ struct PopupView: View {
                 Divider()
             }
             ZStack(alignment: .top) {
-                Group {
-                    switch selectedTab {
-                    case .active: activeContent
-                    case .inReview: inReviewContent
-                    case .recent: recentContent
-                    }
-                }
-                .opacity(overlayController.hideContent ? 0 : 1)
-                .animation(.none, value: overlayController.hideContent)
+                // Keep all tabs in the hierarchy to prevent constraint crashes
+                // Only show the active one via opacity
+                activeContent
+                    .opacity(selectedTab == .active && !overlayController.hideContent ? 1 : 0)
+                    .frame(maxHeight: selectedTab == .active ? .infinity : 0)
+                    .clipped()
+                inReviewContent
+                    .opacity(selectedTab == .inReview && !overlayController.hideContent ? 1 : 0)
+                    .frame(maxHeight: selectedTab == .inReview ? .infinity : 0)
+                    .clipped()
+                recentContent
+                    .opacity(selectedTab == .recent && !overlayController.hideContent ? 1 : 0)
+                    .frame(maxHeight: selectedTab == .recent ? .infinity : 0)
+                    .clipped()
                 if let overlay = overlayController.active {
                     overlayPanel {
                         switch overlay {
@@ -155,6 +172,13 @@ struct PopupView: View {
         .onChange(of: selectedTab) { _ in
             selectedIndex = nil
             selectedAction = -1
+            // Briefly pause wellness timer to prevent layout crash during tab transition
+            wellnessManager.isPaused = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                if wellnessManager.isWorkdayActive {
+                    wellnessManager.isPaused = false
+                }
+            }
         }
         .onReceive(
             NotificationCenter.default.publisher(
@@ -199,13 +223,13 @@ struct PopupView: View {
         HStack(spacing: 6) {
             tabButton(
                 "Active",
-                count: activeSessions.count,
+                count: groupSessions(activeSessions).count,
                 tab: .active,
                 hasUrgent: activeSessions.contains { $0.status == .waitingPermission }
             )
             tabButton(
                 "In Review",
-                count: inReviewSessions.count,
+                count: groupSessions(inReviewSessions).count,
                 tab: .inReview,
                 hasUrgent: inReviewSessions.contains { $0.status == .waitingPermission }
             )
@@ -248,31 +272,46 @@ struct PopupView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
             } else {
+                let groups = groupSessions(list)
                 ScrollViewReader { proxy in
                     ScrollView(showsIndicators: false) {
                         LazyVStack(spacing: 0) {
                             ForEach(
-                                Array(list.enumerated()),
+                                Array(groups.enumerated()),
                                 id: \.element.id
-                            ) { index, session in
+                            ) { index, group in
                                 if index > 0 {
                                     Divider()
                                         .padding(.horizontal, 16)
                                 }
                                 sessionCard(
-                                    session: session, index: index
+                                    session: group.primary,
+                                    index: index
                                 )
-                                .id(session.id)
+                                .id(group.primary.id)
+
+                                // Sub-sessions (indented)
+                                ForEach(
+                                    group.subSessions,
+                                    id: \.id
+                                ) { sub in
+                                    subSessionRow(session: sub)
+                                }
                             }
                         }
                         .padding(.vertical, 4)
                     }
                     .frame(maxHeight: 290)
                     .onChange(of: selectedIndex) { newIndex in
+                        let currentGroups = groupSessions(list)
                         guard let idx = newIndex,
-                              idx < list.count else { return }
+                              idx < currentGroups.count
+                        else { return }
                         withAnimation(.easeOut(duration: 0.15)) {
-                            proxy.scrollTo(list[idx].id, anchor: .center)
+                            proxy.scrollTo(
+                                currentGroups[idx].primary.id,
+                                anchor: .center
+                            )
                         }
                     }
                 }
@@ -307,6 +346,17 @@ struct PopupView: View {
             gitAhead: worktreeManager.gitSyncStatus[session.projectPath]?.ahead ?? 0,
             gitBehind: worktreeManager.gitSyncStatus[session.projectPath]?.behind ?? 0,
             gitUnpushed: worktreeManager.gitSyncStatus[session.projectPath]?.unpushed ?? false,
+            gitStaged: worktreeManager.gitSyncStatus[session.projectPath]?.staged ?? 0,
+            gitUnstaged: worktreeManager.gitSyncStatus[session.projectPath]?.unstaged ?? 0,
+            onReview: perkupReviewAction(for: session),
+            isReviewing: worktreeManager.reviewingPaths
+                .contains(session.projectPath),
+            onSync: perkupSyncAction(for: session),
+            isSyncing: worktreeManager.syncingPaths
+                .contains(session.projectPath),
+            onPush: perkupPushAction(for: session),
+            isPushing: worktreeManager.pushingPaths
+                .contains(session.projectPath),
             onShip: perkupShipAction(for: session),
             isShipping: worktreeManager.shippingPaths
                 .contains(session.projectPath),
@@ -453,11 +503,12 @@ extension PopupView {
     }
 
     var footerBar: some View {
-        HStack {
+        HStack(spacing: 6) {
             QuitButton()
             versionButton
             footerShortcutHints
             Spacer()
+            workdayControls
             refreshButton
             newWorktreeButton
             settingsGearButton
@@ -466,63 +517,63 @@ extension PopupView {
         .padding(.vertical, 7)
     }
 
-    private var refreshButton: some View {
-        Button {
-            isRefreshing = true
-            worktreeManager.refreshPRs()
-            worktreeManager.refreshGitSync(sessions: sessions)
-            onRefreshSessions?()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                isRefreshing = false
+    @ViewBuilder
+    private var workdayControls: some View {
+        if wellnessManager.isWorkdayActive {
+            // Took a break (resets eye + water)
+            FooterButton(
+                icon: "cup.and.saucer.fill"
+            ) {
+                wellnessManager.tookBreak()
             }
-        } label: {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(
-                    refreshHovered
-                        ? Color.textPrimary : Color.textSecondary
-                )
-                .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                .animation(
-                    isRefreshing
-                        ? .linear(duration: 0.6) : .default,
-                    value: isRefreshing
-                )
-                .frame(width: 28, height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            Color.textPrimary.opacity(
-                                refreshHovered ? 0.1 : 0
-                            )
-                        )
-                )
+            // Pause/resume
+            FooterButton(
+                icon: wellnessManager.isPaused
+                    ? "play.fill" : "pause.fill"
+            ) {
+                wellnessManager.togglePause()
+            }
+            // End workday
+            FooterButton(icon: "stop.fill") {
+                wellnessManager.endWorkday()
+            }
+        } else {
+            FooterButton(
+                icon: "sun.max.fill",
+                label: "Start"
+            ) {
+                wellnessManager.startWorkday()
+            }
         }
-        .buttonStyle(.plain)
-        .onHover { refreshHovered = $0 }
-        .help("Refresh PR status")
     }
 
-    private var newWorktreeButton: some View {
-        Button { showNewWorktreeInput.toggle() } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(
-                    newWorktreeHovered
-                        ? Color.textPrimary : Color.textSecondary
+    @ViewBuilder
+    private var refreshButton: some View {
+        if worktreeManager.isRefreshingAll {
+            ProgressView()
+                .scaleEffect(0.4)
+                .frame(width: 22, height: 22)
+        } else {
+            FooterButton(icon: "arrow.clockwise") {
+                worktreeManager.refreshAll(
+                    sessions: sessions,
+                    reloadSessions: onRefreshSessions
                 )
-                .frame(width: 28, height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            Color.textPrimary.opacity(
-                                newWorktreeHovered ? 0.1 : 0
-                            )
-                        )
-                )
+            }
         }
-        .buttonStyle(.plain)
-        .onHover { newWorktreeHovered = $0 }
+    }
+
+    @ViewBuilder
+    private var newWorktreeButton: some View {
+        if worktreeManager.isCreating {
+            ProgressView()
+                .scaleEffect(0.4)
+                .frame(width: 22, height: 22)
+        } else {
+            FooterButton(icon: "plus") {
+                showNewWorktreeInput.toggle()
+            }
+        }
     }
 
     @ViewBuilder
@@ -577,7 +628,7 @@ extension PopupView {
                 if worktreeManager.isCreating {
                     HStack(spacing: 4) {
                         ProgressView()
-                            .scaleEffect(0.5)
+                            .scaleEffect(0.4)
                             .frame(width: 12, height: 12)
                         Text("Creating worktree...")
                             .font(.system(size: 10))
@@ -677,23 +728,12 @@ extension PopupView {
     }
 
     private var settingsGearButton: some View {
-        Button { toggleOverlay(.settings) } label: {
-            Image(systemName: "gearshape")
-                .font(.system(size: 14))
-                .foregroundStyle(overlayController.active == .settings ? Color.amber : Color.secondary)
-                .frame(width: 28, height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.textPrimary.opacity(gearHovered ? 0.1 : 0))
-                )
-                .overlay(alignment: .topTrailing) {
-                    if updater.pendingUpdateVersion != nil && overlayController.active != .settings {
-                        Circle().fill(Color.amber).frame(width: 7, height: 7).offset(x: 2, y: -2)
-                    }
-                }
+        FooterButton(
+            icon: "gearshape.fill",
+            isActive: overlayController.active == .settings
+        ) {
+            toggleOverlay(.settings)
         }
-        .buttonStyle(.plain)
-        .onHover { gearHovered = $0 }
     }
 
     // MARK: - Helpers
@@ -715,6 +755,30 @@ extension PopupView {
     private var hasMultipleSources: Bool { Set(sessions.map(\.sourceLabel)).count > 1 }
     private var sortedSessions: [Session] {
         Session.sorted(activeSessions)
+    }
+
+    /// Group sessions by worktree path — first session is primary, rest are sub-sessions
+    struct WorktreeGroup: Identifiable {
+        let id: String  // projectPath
+        let primary: Session
+        let subSessions: [Session]
+    }
+
+    private func groupSessions(_ sessions: [Session]) -> [WorktreeGroup] {
+        var grouped: [String: [Session]] = [:]
+        for session in sessions {
+            grouped[session.projectPath, default: []].append(session)
+        }
+        return Session.sorted(
+            grouped.values.compactMap(\.first)
+        ).compactMap { primary in
+            let all = grouped[primary.projectPath] ?? [primary]
+            return WorktreeGroup(
+                id: primary.projectPath,
+                primary: primary,
+                subSessions: Array(all.dropFirst())
+            )
+        }
     }
 
     private func focusSession(_ session: Session) {
@@ -811,6 +875,45 @@ extension PopupView {
         }
     }
 
+    private func perkupReviewAction(
+        for session: Session
+    ) -> (() -> Void)? {
+        guard WorktreeManager.isPerkupWorktree(session.projectPath),
+              !worktreeManager.reviewingPaths.contains(session.projectPath)
+        else { return nil }
+        return {
+            worktreeManager.startReview(
+                projectPath: session.projectPath
+            )
+        }
+    }
+
+    private func perkupSyncAction(
+        for session: Session
+    ) -> (() -> Void)? {
+        guard WorktreeManager.isPerkupWorktree(session.projectPath),
+              !worktreeManager.syncingPaths.contains(session.projectPath)
+        else { return nil }
+        return {
+            worktreeManager.syncWorktree(
+                projectPath: session.projectPath
+            )
+        }
+    }
+
+    private func perkupPushAction(
+        for session: Session
+    ) -> (() -> Void)? {
+        guard WorktreeManager.isPerkupWorktree(session.projectPath),
+              !worktreeManager.pushingPaths.contains(session.projectPath)
+        else { return nil }
+        return {
+            worktreeManager.pushWorktree(
+                projectPath: session.projectPath
+            )
+        }
+    }
+
     private func perkupRemoveAction(
         for session: Session
     ) -> (() -> Void)? {
@@ -818,6 +921,44 @@ extension PopupView {
             return nil
         }
         return { worktreeManager.removeWorktree(projectPath: session.projectPath) }
+    }
+
+    private func subSessionRow(session: Session) -> some View {
+        HStack(spacing: 6) {
+            Text("↳")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.textMuted)
+                .frame(width: 16)
+
+            // Status icon
+            switch session.status {
+            case .working, .compacting:
+                SpinningIcon()
+                    .scaleEffect(0.8)
+            case .waitingPermission:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.statusPermission)
+            case .waitingInput, .needsAttention:
+                Image(systemName: "bubble.left.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.statusAttention)
+            case .idle:
+                Image(systemName: "moon.zzz.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.textMuted)
+            }
+
+            Text(session.sessionName ?? "session")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.textSecondary)
+                .lineLimit(1)
+
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .padding(.leading, 16)
     }
 
     private func openInFinder(path: String) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path) }
@@ -839,9 +980,10 @@ extension PopupView {
                 selectedAction -= 1
             }
         case .right:
-            if let idx = selectedIndex, idx < currentTabSessions.count {
+            let groups = currentTabGroups
+            if let idx = selectedIndex, idx < groups.count {
                 let maxAction = actionCount(
-                    for: currentTabSessions[idx]
+                    for: groups[idx].primary
                 ) - 1
                 if selectedAction < maxAction {
                     selectedAction += 1
@@ -860,13 +1002,12 @@ extension PopupView {
     }
 
     private func jumpToDisplayedSession(index: Int) {
-        let list = currentTabSessions
-        guard index < list.count else { return }
+        let groups = currentTabGroups
+        guard index < groups.count else { return }
         worktreeManager.openCursor(
-            projectPath: list[index].projectPath
+            projectPath: groups[index].primary.projectPath
         )
         selectedIndex = nil
-        // Re-show panel after Cursor steals focus
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             NotificationCenter.default.post(
                 name: .sessionNeedsAttention, object: nil
@@ -882,8 +1023,13 @@ extension PopupView {
         }
     }
 
+    private var currentTabGroups: [WorktreeGroup] {
+        groupSessions(currentTabSessions)
+    }
+
     private func moveSelection(by delta: Int) {
-        let count = currentTabSessions.count
+        let groups = currentTabGroups
+        let count = groups.count
         guard count > 0 else { return }
         selectedIndex = selectedIndex.map {
             ($0 + delta + count) % count
@@ -905,7 +1051,10 @@ extension PopupView {
             actions.append("ship")
         }
         if WorktreeManager.isPerkupWorktree(session.projectPath) {
+            actions.append("review")
             actions.append("chrome")
+            actions.append("sync")
+            actions.append("push")
             actions.append("server")
             actions.append("delete")
         }
@@ -917,9 +1066,10 @@ extension PopupView {
     }
 
     private func confirmSelection() {
+        let groups = currentTabGroups
         guard let index = selectedIndex,
-              index < currentTabSessions.count else { return }
-        let session = currentTabSessions[index]
+              index < groups.count else { return }
+        let session = groups[index].primary
 
         if selectedAction == -1 {
             // Row level — open Cursor
@@ -943,6 +1093,18 @@ extension PopupView {
                 )
             case "ship":
                 shipSessionPath = session.projectPath
+            case "review":
+                worktreeManager.startReview(
+                    projectPath: session.projectPath
+                )
+            case "sync":
+                worktreeManager.syncWorktree(
+                    projectPath: session.projectPath
+                )
+            case "push":
+                worktreeManager.pushWorktree(
+                    projectPath: session.projectPath
+                )
             case "chrome":
                 worktreeManager.openWeb(
                     projectPath: session.projectPath
@@ -976,5 +1138,44 @@ extension PopupView {
         if overlayController.active != nil { closeOverlay(animated: true) }
         withAnimation(.easeInOut(duration: 0.15)) { selectedTab = newTab }
         notifyLayoutChanged()
+    }
+}
+
+private struct FooterButton: View {
+    let icon: String
+    var label: String?
+    var isActive: Bool = false
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 10))
+                if let label {
+                    Text(label)
+                        .font(.system(size: 9, weight: .medium))
+                }
+            }
+            .foregroundStyle(
+                isActive ? Color.amber
+                    : hovered ? Color.textPrimary
+                    : Color.textMuted
+            )
+            .frame(height: 22)
+            .padding(.horizontal, label != nil ? 8 : 0)
+            .frame(minWidth: 22)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(
+                        Color.textPrimary.opacity(
+                            hovered ? 0.1 : 0
+                        )
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
     }
 }

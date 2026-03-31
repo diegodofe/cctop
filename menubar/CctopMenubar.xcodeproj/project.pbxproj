@@ -15,6 +15,8 @@
 		B10000030000000000000001 /* SessionStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000040000000000000001 /* SessionStatus.swift */; };
 		C10000010000000000000001 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000020000000000000001 /* SessionManager.swift */; };
 		C1AAAA010000000000000001 /* WorktreeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1AAAA020000000000000001 /* WorktreeManager.swift */; };
+		C1BBBB010000000000000001 /* WellnessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1BBBB020000000000000001 /* WellnessManager.swift */; };
+		C1CCCC010000000000000001 /* ArboristApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1CCCC020000000000000001 /* ArboristApplication.swift */; };
 		D10000010000000000000001 /* StatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000020000000000000001 /* StatusChip.swift */; };
 		D10000030000000000000001 /* HeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000040000000000000001 /* HeaderView.swift */; };
 		D10000050000000000000001 /* SessionCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000060000000000000001 /* SessionCardView.swift */; };
@@ -110,6 +112,8 @@
 		B10000040000000000000001 /* SessionStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStatus.swift; sourceTree = "<group>"; };
 		C10000020000000000000001 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
 		C1AAAA020000000000000001 /* WorktreeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorktreeManager.swift; sourceTree = "<group>"; };
+		C1BBBB020000000000000001 /* WellnessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WellnessManager.swift; sourceTree = "<group>"; };
+		C1CCCC020000000000000001 /* ArboristApplication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArboristApplication.swift; sourceTree = "<group>"; };
 		D1000000A000000000000001 /* QuitButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuitButton.swift; sourceTree = "<group>"; };
 		D10000020000000000000001 /* StatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusChip.swift; sourceTree = "<group>"; };
 		D10000040000000000000001 /* HeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderView.swift; sourceTree = "<group>"; };
@@ -221,6 +225,8 @@
 			children = (
 				C10000020000000000000001 /* SessionManager.swift */,
 				C1AAAA020000000000000001 /* WorktreeManager.swift */,
+				C1BBBB020000000000000001 /* WellnessManager.swift */,
+				C1CCCC020000000000000001 /* ArboristApplication.swift */,
 				HM0000020000000000000001 /* HistoryManager.swift */,
 				E10000020000000000000001 /* FocusTerminal.swift */,
 				SP0000020000000000000001 /* SparkleUpdater.swift */,
@@ -476,6 +482,8 @@
 				B10000030000000000000001 /* SessionStatus.swift in Sources */,
 				C10000010000000000000001 /* SessionManager.swift in Sources */,
 				C1AAAA010000000000000001 /* WorktreeManager.swift in Sources */,
+				C1BBBB010000000000000001 /* WellnessManager.swift in Sources */,
+				C1CCCC010000000000000001 /* ArboristApplication.swift in Sources */,
 				D10000010000000000000001 /* StatusChip.swift in Sources */,
 				D10000030000000000000001 /* HeaderView.swift in Sources */,
 				D10000050000000000000001 /* SessionCardView.swift in Sources */,

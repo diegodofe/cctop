@@ -112,6 +112,7 @@ struct PanelContentView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @StateObject private var overlayController = OverlayController()
     @StateObject private var worktreeManager = WorktreeManager()
+    @StateObject private var wellnessManager = WellnessManager()
     @State private var isFocused = false
 
     var body: some View {
@@ -123,10 +124,11 @@ struct PanelContentView: View {
             navigate: navigate,
             overlayController: overlayController,
             worktreeManager: worktreeManager,
+            wellnessManager: wellnessManager,
             isFocused: isFocused,
             onRefreshSessions: { sessionManager.loadSessions() }
         )
-        .frame(width: 320)
+        .frame(width: 400)
         .background(Color.panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
@@ -172,34 +174,34 @@ struct PanelContentView: View {
 // MARK: - PopupView Previews
 
 #Preview("With sessions") {
-    PopupView(sessions: Session.mockSessions, updater: DisabledUpdater()).frame(width: 320)
+    PopupView(sessions: Session.mockSessions, updater: DisabledUpdater()).frame(width: 400)
 }
 #Preview("Mixed sources") {
-    PopupView(sessions: Session.qaShowcase, updater: DisabledUpdater()).frame(width: 320)
+    PopupView(sessions: Session.qaShowcase, updater: DisabledUpdater()).frame(width: 400)
 }
 #Preview("Empty") {
-    PopupView(sessions: [], updater: DisabledUpdater(), pluginManager: PluginManager()).frame(width: 320)
+    PopupView(sessions: [], updater: DisabledUpdater(), pluginManager: PluginManager()).frame(width: 400)
 }
 #Preview("With Tabs") {
     PopupView(
         sessions: Session.mockSessions, recentProjects: RecentProject.mockRecents, updater: DisabledUpdater()
-    ).frame(width: 320)
+    ).frame(width: 400)
 }
 #Preview("Only Recents") {
     PopupView(
         sessions: [], recentProjects: RecentProject.mockRecents,
         updater: DisabledUpdater(), pluginManager: PluginManager()
-    ).frame(width: 320)
+    ).frame(width: 400)
 }
 #Preview("Empty Recents Tab") {
     PopupView(
         sessions: Session.mockSessions, recentProjects: [RecentProject.mock()], updater: DisabledUpdater()
-    ).frame(width: 320)
+    ).frame(width: 400)
 }
 #Preview("Navigate") {
     let rc = NavigateController(); rc.isActive = true
     return PopupView(
         sessions: Session.qaShowcase, recentProjects: RecentProject.mockRecents,
         updater: DisabledUpdater(), navigate: rc
-    ).frame(width: 320)
+    ).frame(width: 400)
 }
