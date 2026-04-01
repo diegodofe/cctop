@@ -12,6 +12,8 @@ extension Session {
 
 struct SessionCardView: View {
     let session: Session
+    /// Override the displayed project name (e.g. worktree root name)
+    var displayName: String?
     /// 1-based index for navigate mode (1-9). nil = normal mode (show accent bar).
     var navigateIndex: Int?
     var showSourceBadge = false
@@ -25,6 +27,7 @@ struct SessionCardView: View {
     var onOpenPR: (() -> Void)?
     var prMerged = false
     var prReviewDecision: String = ""
+    var prAutoMerge = false
     var gitAhead: Int = 0
     var gitBehind: Int = 0
     var gitUnpushed = false
@@ -36,6 +39,8 @@ struct SessionCardView: View {
     var isSyncing = false
     var onPush: (() -> Void)?
     var isPushing = false
+    var onAutomerge: (() -> Void)?
+    var isAutomerging = false
     var onShip: (() -> Void)?
     var isShipping = false
     var onRemove: (() -> Void)?
@@ -55,7 +60,7 @@ struct SessionCardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 // Row 1: project name + badges + action buttons
                 HStack(spacing: 6) {
-                    Text(session.projectName)
+                    Text(displayName ?? session.projectName)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(
                             session.status == .idle
@@ -186,6 +191,23 @@ struct SessionCardView: View {
         }
         .onReceive(
             NotificationCenter.default.publisher(
+                for: .openGitMenu
+            )
+        ) { notification in
+            guard let path = notification.userInfo?["projectPath"]
+                as? String,
+                path == session.projectPath else { return }
+            showGitMenu = true
+        }
+        .onChange(of: showGitMenu) { open in
+            NotificationCenter.default.post(
+                name: .submenuStateChanged,
+                object: nil,
+                userInfo: ["open": open]
+            )
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
                 for: .sessionNeedsAttention
             )
         ) { notification in
@@ -288,49 +310,34 @@ struct SessionCardView: View {
             let i = idx; idx += 1; return i
         }
 
+        let isGitLoading = isSyncing || isPushing || isShipping
+            || isReviewing || isAutomerging
+
         return HStack(spacing: 2) {
-            if let prAction = onOpenPR {
-                let i = nextIdx()
-                perkupActionButton(
-                    systemImage: prMerged
-                        ? "arrow.triangle.merge"
-                        : prReviewDecision == "APPROVED"
-                            ? "checkmark.seal.fill"
-                            : prReviewDecision == "CHANGES_REQUESTED"
-                                ? "exclamationmark.bubble.fill"
-                                : "arrow.triangle.pull",
-                    action: prAction,
+            // Git submenu
+            let gitIdx = nextIdx()
+            if isGitLoading {
+                ProgressView()
+                    .scaleEffect(0.4)
+                    .frame(width: 16, height: 16)
+            } else {
+                PerkupIconButton(
+                    systemImage: prIcon,
+                    active: prReviewDecision == "APPROVED"
+                        && !prAutoMerge,
+                    merged: prMerged,
+                    inQueue: prAutoMerge,
+                    highlighted: selectedActionIndex == gitIdx,
                     destructive:
                         prReviewDecision == "CHANGES_REQUESTED",
-                    active: prReviewDecision == "APPROVED",
-                    merged: prMerged,
-                    highlighted: selectedActionIndex == i
+                    action: { showGitMenu.toggle() }
                 )
+                .popover(isPresented: $showGitMenu) {
+                    gitMenuContent
+                }
             }
-            if isShipping {
-                ProgressView()
-                    .scaleEffect(0.4)
-                    .frame(width: 16, height: 16)
-            } else if let shipAction = onShip {
-                let i = nextIdx()
-                perkupActionButton(
-                    systemImage: "paperplane.fill",
-                    action: shipAction,
-                    highlighted: selectedActionIndex == i
-                )
-            }
-            if isReviewing {
-                ProgressView()
-                    .scaleEffect(0.4)
-                    .frame(width: 16, height: 16)
-            } else if let reviewAction = onReview {
-                let i = nextIdx()
-                perkupActionButton(
-                    systemImage: "magnifyingglass",
-                    action: reviewAction,
-                    highlighted: selectedActionIndex == i
-                )
-            }
+
+            // Chrome
             if let chromeAction = onOpenChrome {
                 let i = nextIdx()
                 perkupActionButton(
@@ -339,30 +346,8 @@ struct SessionCardView: View {
                     highlighted: selectedActionIndex == i
                 )
             }
-            if isSyncing {
-                ProgressView()
-                    .scaleEffect(0.4)
-                    .frame(width: 16, height: 16)
-            } else if let syncAction = onSync {
-                let i = nextIdx()
-                perkupActionButton(
-                    systemImage: "arrow.down.circle",
-                    action: syncAction,
-                    highlighted: selectedActionIndex == i
-                )
-            }
-            if isPushing {
-                ProgressView()
-                    .scaleEffect(0.4)
-                    .frame(width: 16, height: 16)
-            } else if let pushAction = onPush {
-                let i = nextIdx()
-                perkupActionButton(
-                    systemImage: "arrow.up.circle",
-                    action: pushAction,
-                    highlighted: selectedActionIndex == i
-                )
-            }
+
+            // Server toggle
             if isServerLoading {
                 ProgressView()
                     .scaleEffect(0.4)
@@ -378,6 +363,8 @@ struct SessionCardView: View {
                     highlighted: selectedActionIndex == i
                 )
             }
+
+            // Delete
             if isRemoving {
                 ProgressView()
                     .scaleEffect(0.4)
@@ -392,6 +379,70 @@ struct SessionCardView: View {
                 )
             }
         }
+    }
+
+    @State private var showGitMenu = false
+
+    private var gitMenuItems: [(String, String, () -> Void)] {
+        var items: [(String, String, () -> Void)] = []
+        if let prAction = onOpenPR {
+            items.append((
+                prMerged ? "View Merged PR" : "View PR",
+                prMerged ? "arrow.triangle.merge" : "arrow.triangle.pull",
+                { prAction(); showGitMenu = false }
+            ))
+        }
+        if let shipAction = onShip {
+            items.append((
+                "Ship PR", "paperplane.fill",
+                { shipAction(); showGitMenu = false }
+            ))
+        }
+        if let reviewAction = onReview {
+            items.append((
+                "Review", "magnifyingglass",
+                { reviewAction(); showGitMenu = false }
+            ))
+        }
+        if let syncAction = onSync {
+            items.append((
+                "Sync (Rebase)", "arrow.down.circle",
+                { syncAction(); showGitMenu = false }
+            ))
+        }
+        if let pushAction = onPush {
+            items.append((
+                "Push", "arrow.up.circle",
+                { pushAction(); showGitMenu = false }
+            ))
+        }
+        if let automergeAction = onAutomerge {
+            items.append((
+                "Auto-merge", "arrow.triangle.merge",
+                { automergeAction(); showGitMenu = false }
+            ))
+        }
+        return items
+    }
+
+    private var gitMenuContent: some View {
+        GitMenuPopover(
+            items: gitMenuItems,
+            isPresented: $showGitMenu
+        )
+    }
+
+    private var prIcon: String {
+        if prMerged { return "arrow.triangle.merge" }
+        if prAutoMerge { return "hourglass" }
+        if prReviewDecision == "APPROVED" {
+            return "checkmark.seal.fill"
+        }
+        if prReviewDecision == "CHANGES_REQUESTED" {
+            return "exclamationmark.bubble.fill"
+        }
+        if onOpenPR != nil { return "arrow.triangle.pull" }
+        return "arrow.triangle.branch"
     }
 
     private func gitBadge(
@@ -429,6 +480,143 @@ struct SessionCardView: View {
     }
 }
 
+private struct GitMenuPopover: View {
+    let items: [(String, String, () -> Void)]
+    @Binding var isPresented: Bool
+    @State private var selectedIdx: Int = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.offset) {
+                index, item in
+                GitMenuItemView(
+                    label: item.0,
+                    icon: item.1,
+                    isSelected: selectedIdx == index,
+                    action: item.2
+                )
+            }
+        }
+        .padding(4)
+        .onAppear { selectedIdx = 0 }
+        .background(
+            GitMenuKeyHandler(
+                itemCount: items.count,
+                selectedIdx: $selectedIdx,
+                onConfirm: {
+                    guard selectedIdx < items.count else { return }
+                    items[selectedIdx].2()
+                },
+                onEscape: { isPresented = false }
+            )
+        )
+    }
+}
+
+/// NSView-based key handler for the git menu popover
+private struct GitMenuKeyHandler: NSViewRepresentable {
+    let itemCount: Int
+    @Binding var selectedIdx: Int
+    let onConfirm: () -> Void
+    let onEscape: () -> Void
+
+    func makeNSView(context: Context) -> GitMenuKeyView {
+        let view = GitMenuKeyView()
+        view.handler = context.coordinator
+        DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
+        return view
+    }
+
+    func updateNSView(_ view: GitMenuKeyView, context: Context) {
+        view.handler = context.coordinator
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    class Coordinator {
+        var parent: GitMenuKeyHandler
+        init(parent: GitMenuKeyHandler) { self.parent = parent }
+    }
+}
+
+private class GitMenuKeyView: NSView {
+    var handler: GitMenuKeyHandler.Coordinator?
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        guard let handler = handler else {
+            super.keyDown(with: event)
+            return
+        }
+        switch event.keyCode {
+        case 125: // down
+            DispatchQueue.main.async {
+                handler.parent.selectedIdx = min(
+                    handler.parent.selectedIdx + 1,
+                    handler.parent.itemCount - 1
+                )
+            }
+        case 126: // up
+            DispatchQueue.main.async {
+                handler.parent.selectedIdx = max(
+                    handler.parent.selectedIdx - 1, 0
+                )
+            }
+        case 36: // return
+            DispatchQueue.main.async {
+                handler.parent.onConfirm()
+            }
+        case 53: // escape
+            DispatchQueue.main.async {
+                handler.parent.onEscape()
+            }
+        default:
+            super.keyDown(with: event)
+        }
+    }
+}
+
+private struct GitMenuItemView: View {
+    let label: String
+    let icon: String
+    var isSelected = false
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 9))
+                    .frame(width: 14)
+                Text(label)
+                    .font(.system(size: 10))
+            }
+            .foregroundStyle(
+                isSelected || hovered
+                    ? Color.textPrimary : Color.textSecondary
+            )
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(
+                        Color.textPrimary.opacity(
+                            isSelected ? 0.12
+                                : hovered ? 0.08 : 0
+                        )
+                    )
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+    }
+}
+
 struct SpinningIcon: View {
     @State private var rotating = false
 
@@ -452,6 +640,7 @@ private struct PerkupIconButton: View {
     let systemImage: String
     var active = false
     var merged = false
+    var inQueue = false
     var highlighted = false
     var destructive = false
     let action: () -> Void
@@ -487,6 +676,9 @@ private struct PerkupIconButton: View {
     private var foregroundColor: Color {
         if merged {
             return hovered ? .purple : .purple.opacity(0.7)
+        }
+        if inQueue {
+            return hovered ? .orange : .orange.opacity(0.7)
         }
         if active {
             return hovered ? Color.statusGreen : Color.statusGreen.opacity(0.7)

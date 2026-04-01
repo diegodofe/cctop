@@ -56,7 +56,9 @@ class WellnessManager: ObservableObject {
 
     private var timer: AnyCancellable?
 
-    init() {}
+    init() {
+        startWorkday()
+    }
 
     // MARK: - Workday Controls
 

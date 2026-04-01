@@ -16,6 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var navigateController = NavigateController()
     private var notchController: NotchStatusController!
     private var navKeyMonitor: Any?
+    private var submenuOpen = false
     private var previousApp: NSRunningApplication?
     private var lastExternalApp: NSRunningApplication?
     private var panelMode: PanelMode = .hidden
@@ -141,6 +142,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         nc.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.startNavKeyMonitor() }
+        nc.addObserver(
+            forName: .submenuStateChanged, object: nil, queue: .main
+        ) { [weak self] notification in
+            self?.submenuOpen = notification.userInfo?["open"] as? Bool ?? false
+        }
         nc.addObserver(
             forName: UserDefaults.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.applyAppearance() }
@@ -598,6 +604,9 @@ extension AppDelegate {
         guard navKeyMonitor == nil else { return }
         navKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.panel.isVisible else { return event }
+
+            // Let submenu handle its own keys
+            if self.submenuOpen { return event }
 
             // Digit keys select session (use keyCode for IME compatibility)
             if let digit = digitKeyCodeMap[event.keyCode] {

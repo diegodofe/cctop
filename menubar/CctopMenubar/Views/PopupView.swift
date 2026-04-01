@@ -6,6 +6,8 @@ extension Notification.Name {
     static let layoutChanged = Notification.Name("layoutChanged")
     static let sessionNeedsAttention = Notification.Name("sessionNeedsAttention")
     static let arboristFocusChanged = Notification.Name("arboristFocusChanged")
+    static let openGitMenu = Notification.Name("openGitMenu")
+    static let submenuStateChanged = Notification.Name("submenuStateChanged")
 }
 
 enum PopupTab {
@@ -286,7 +288,8 @@ struct PopupView: View {
                                 }
                                 sessionCard(
                                     session: group.primary,
-                                    index: index
+                                    index: index,
+                                    displayName: group.displayName
                                 )
                                 .id(group.primary.id)
 
@@ -320,10 +323,11 @@ struct PopupView: View {
     }
 
     private func sessionCard(
-        session: Session, index: Int
+        session: Session, index: Int, displayName: String? = nil
     ) -> some View {
         SessionCardView(
             session: session,
+            displayName: displayName,
             navigateIndex: isFocused ? index + 1 : nil,
             showSourceBadge: hasMultipleSources,
             isSelected: isFocused && selectedIndex == index,
@@ -343,6 +347,7 @@ struct PopupView: View {
             onOpenPR: perkupPRAction(for: session),
             prMerged: worktreeManager.openPRs[session.branch]?.merged ?? false,
             prReviewDecision: worktreeManager.openPRs[session.branch]?.reviewDecision ?? "",
+            prAutoMerge: worktreeManager.openPRs[session.branch]?.autoMergeEnabled ?? false,
             gitAhead: worktreeManager.gitSyncStatus[session.projectPath]?.ahead ?? 0,
             gitBehind: worktreeManager.gitSyncStatus[session.projectPath]?.behind ?? 0,
             gitUnpushed: worktreeManager.gitSyncStatus[session.projectPath]?.unpushed ?? false,
@@ -356,6 +361,9 @@ struct PopupView: View {
                 .contains(session.projectPath),
             onPush: perkupPushAction(for: session),
             isPushing: worktreeManager.pushingPaths
+                .contains(session.projectPath),
+            onAutomerge: perkupAutomergeAction(for: session),
+            isAutomerging: worktreeManager.automergingPaths
                 .contains(session.projectPath),
             onShip: perkupShipAction(for: session),
             isShipping: worktreeManager.shippingPaths
@@ -759,25 +767,42 @@ extension PopupView {
 
     /// Group sessions by worktree path — first session is primary, rest are sub-sessions
     struct WorktreeGroup: Identifiable {
-        let id: String  // projectPath
+        let id: String  // worktree root path
         let primary: Session
         let subSessions: [Session]
+
+        /// Always the worktree folder name, regardless of which subdirectory the session started in
+        var displayName: String {
+            URL(fileURLWithPath: id).lastPathComponent
+        }
     }
 
     private func groupSessions(_ sessions: [Session]) -> [WorktreeGroup] {
         var grouped: [String: [Session]] = [:]
         for session in sessions {
-            grouped[session.projectPath, default: []].append(session)
+            let key = WorktreeManager.worktreeRoot(
+                for: session.projectPath
+            ) ?? session.projectPath
+            grouped[key, default: []].append(session)
         }
-        return Session.sorted(
-            grouped.values.compactMap(\.first)
-        ).compactMap { primary in
-            let all = grouped[primary.projectPath] ?? [primary]
-            return WorktreeGroup(
-                id: primary.projectPath,
-                primary: primary,
-                subSessions: Array(all.dropFirst())
-            )
+
+        var groups: [WorktreeGroup] = []
+        for (key, all) in grouped {
+            // Prefer session at worktree root as primary
+            let sorted = all.sorted {
+                $0.projectPath.count < $1.projectPath.count
+            }
+            groups.append(WorktreeGroup(
+                id: key,
+                primary: sorted[0],
+                subSessions: Array(sorted.dropFirst())
+            ))
+        }
+
+        return groups.sorted {
+            $0.displayName.localizedCaseInsensitiveCompare(
+                $1.displayName
+            ) == .orderedAscending
         }
     }
 
@@ -896,6 +921,22 @@ extension PopupView {
         else { return nil }
         return {
             worktreeManager.syncWorktree(
+                projectPath: session.projectPath
+            )
+        }
+    }
+
+    private func perkupAutomergeAction(
+        for session: Session
+    ) -> (() -> Void)? {
+        // Only show for sessions with an open (non-merged) PR
+        guard WorktreeManager.isPerkupWorktree(session.projectPath),
+              let pr = worktreeManager.openPRs[session.branch],
+              !pr.merged,
+              !worktreeManager.automergingPaths.contains(session.projectPath)
+        else { return nil }
+        return {
+            worktreeManager.enableAutomerge(
                 projectPath: session.projectPath
             )
         }
@@ -1037,24 +1078,15 @@ extension PopupView {
     }
 
     /// Returns ordered list of action names for a session
+    /// Inline action names (for keyboard left/right navigation)
+    /// Git actions are in a menu, so only inline buttons are navigable
     private func actionNames(
         for session: Session
     ) -> [String] {
         var actions: [String] = []
-        if worktreeManager.openPRs[session.branch] != nil {
-            actions.append("pr")
-        }
-        if WorktreeManager.isPerkupWorktree(session.projectPath)
-            && worktreeManager.openPRs[session.branch] == nil
-            && !worktreeManager.shippingPaths.contains(session.projectPath)
-        {
-            actions.append("ship")
-        }
+        actions.append("git")  // git submenu
         if WorktreeManager.isPerkupWorktree(session.projectPath) {
-            actions.append("review")
             actions.append("chrome")
-            actions.append("sync")
-            actions.append("push")
             actions.append("server")
             actions.append("delete")
         }
@@ -1087,23 +1119,12 @@ extension PopupView {
             let actions = actionNames(for: session)
             guard selectedAction < actions.count else { return }
             switch actions[selectedAction] {
-            case "pr":
-                worktreeManager.openPR(
-                    projectPath: session.projectPath
-                )
-            case "ship":
-                shipSessionPath = session.projectPath
-            case "review":
-                worktreeManager.startReview(
-                    projectPath: session.projectPath
-                )
-            case "sync":
-                worktreeManager.syncWorktree(
-                    projectPath: session.projectPath
-                )
-            case "push":
-                worktreeManager.pushWorktree(
-                    projectPath: session.projectPath
+            case "git":
+                NotificationCenter.default.post(
+                    name: .openGitMenu, object: nil,
+                    userInfo: [
+                        "projectPath": session.projectPath,
+                    ]
                 )
             case "chrome":
                 worktreeManager.openWeb(

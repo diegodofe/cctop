@@ -413,6 +413,18 @@ class WorktreeManager: ObservableObject {
     /// Store last sessions for post-sync refresh
     var lastSessions: [Session]?
 
+    @Published var automergingPaths: Set<String> = []
+
+    func enableAutomerge(projectPath: String) {
+        let name = URL(fileURLWithPath: projectPath).lastPathComponent
+        automergingPaths.insert(projectPath)
+
+        runPwCommand(
+            command: "automerge", name: name, path: projectPath,
+            loadingSet: \.automergingPaths
+        )
+    }
+
     func openPR(projectPath: String) {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent
         DispatchQueue.global(qos: .userInitiated).async { [pwPath] in
@@ -425,9 +437,25 @@ class WorktreeManager: ObservableObject {
 
     // MARK: - Perkup Detection
 
+    /// Resolve a session's projectPath to its worktree root.
+    /// Claude Code may be started from a subdirectory (e.g. apps/frontend),
+    /// so we walk up the path looking for a perkup-* directory.
+    static func worktreeRoot(for projectPath: String) -> String? {
+        var url = URL(fileURLWithPath: projectPath)
+        let projectsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Projects").path
+        while url.path.count > projectsDir.count {
+            let name = url.lastPathComponent
+            if name.hasPrefix("perkup-") || name == "perkup-app" {
+                return url.path
+            }
+            url = url.deletingLastPathComponent()
+        }
+        return nil
+    }
+
     static func isPerkupWorktree(_ projectPath: String) -> Bool {
-        let name = URL(fileURLWithPath: projectPath).lastPathComponent
-        return name.hasPrefix("perkup-") || name == "perkup-app"
+        worktreeRoot(for: projectPath) != nil
     }
 
     // MARK: - GitHub PR Integration
@@ -438,7 +466,8 @@ class WorktreeManager: ObservableObject {
         let title: String
         let branch: String
         let merged: Bool
-        let reviewDecision: String  // APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, ""
+        let reviewDecision: String
+        let autoMergeEnabled: Bool
     }
 
     struct GitSyncStatus {
@@ -465,7 +494,7 @@ class WorktreeManager: ObservableObject {
                 "--repo", "perkupapp/perkup-app",
                 "--state", "all",
                 "--json",
-                "headRefName,url,number,title,state,reviewDecision",
+                "headRefName,url,number,title,state,reviewDecision,autoMergeRequest",
                 "--limit", "50",
             ]
 
@@ -479,6 +508,9 @@ class WorktreeManager: ObservableObject {
                 let data = pipe.fileHandleForReading
                     .readDataToEndOfFile()
 
+                struct AutoMerge: Decodable {
+                    let enabledAt: String?
+                }
                 struct GHPullRequest: Decodable {
                     let headRefName: String
                     let url: String
@@ -486,6 +518,7 @@ class WorktreeManager: ObservableObject {
                     let title: String
                     let state: String
                     let reviewDecision: String?
+                    let autoMergeRequest: AutoMerge?
                 }
 
                 let prs = try JSONDecoder().decode(
@@ -501,7 +534,8 @@ class WorktreeManager: ObservableObject {
                         title: pr.title,
                         branch: pr.headRefName,
                         merged: pr.state == "MERGED",
-                        reviewDecision: pr.reviewDecision ?? ""
+                        reviewDecision: pr.reviewDecision ?? "",
+                        autoMergeEnabled: pr.autoMergeRequest != nil
                     )
                 }
 
