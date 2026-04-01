@@ -9,7 +9,22 @@ private let logger = Logger(
 @MainActor
 class WorktreeManager: ObservableObject {
     @Published var isCreating = false
-    @Published var lastError: String?
+    @Published var lastError: String? {
+        didSet {
+            if let error = lastError {
+                let log = "[\(Date())] \(error)\n"
+                let path = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent(".cctop/logs/_errors.log")
+                if let handle = try? FileHandle(forWritingTo: path) {
+                    handle.seekToEndOfFile()
+                    handle.write(log.data(using: .utf8) ?? Data())
+                    handle.closeFile()
+                } else {
+                    try? log.write(to: path, atomically: true, encoding: .utf8)
+                }
+            }
+        }
+    }
     @Published var removingPaths: Set<String> = []
     /// Tracks which project paths have a running dev server process
     @Published var runningServers: [String: Process] = [:]
@@ -315,33 +330,9 @@ class WorktreeManager: ObservableObject {
         return nil
     }
 
-    @Published var reviewingPaths: Set<String> = []
     @Published var syncingPaths: Set<String> = []
     @Published var pushingPaths: Set<String> = []
     @Published var isRefreshingAll = false
-
-    func startReview(projectPath: String) {
-        let name = URL(fileURLWithPath: projectPath).lastPathComponent
-        reviewingPaths.insert(projectPath)
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            [weak self, pwPath] in
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
-            proc.arguments = [
-                "-l", "-c", "\(pwPath) review \(name)",
-            ]
-            let pipe = Pipe()
-            proc.standardOutput = pipe
-            proc.standardError = pipe
-            try? proc.run()
-            proc.waitUntilExit()
-
-            DispatchQueue.main.async {
-                self?.reviewingPaths.remove(projectPath)
-            }
-        }
-    }
 
     func syncWorktree(projectPath: String) {
         let name = URL(fileURLWithPath: projectPath).lastPathComponent

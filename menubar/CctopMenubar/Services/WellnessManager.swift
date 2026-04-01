@@ -127,10 +127,10 @@ class WellnessManager: ObservableObject {
         waterSecondsSinceLast = 0
     }
 
-    /// Single action: took a break (resets eyes + logs water)
+    /// Single action: took a break (resets eyes + catches up water)
     func tookBreak() {
         eyeSecondsSinceBreak = 0
-        waterCount += 1
+        waterCount = max(waterCount + 1, waterExpected)
         waterSecondsSinceLast = 0
     }
 

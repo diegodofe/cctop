@@ -33,8 +33,6 @@ struct SessionCardView: View {
     var gitUnpushed = false
     var gitStaged: Int = 0
     var gitUnstaged: Int = 0
-    var onReview: (() -> Void)?
-    var isReviewing = false
     var onSync: (() -> Void)?
     var isSyncing = false
     var onPush: (() -> Void)?
@@ -311,7 +309,7 @@ struct SessionCardView: View {
         }
 
         let isGitLoading = isSyncing || isPushing || isShipping
-            || isReviewing || isAutomerging
+            || isAutomerging
 
         return HStack(spacing: 2) {
             // Git submenu
@@ -396,12 +394,6 @@ struct SessionCardView: View {
             items.append((
                 "Ship PR", "paperplane.fill",
                 { shipAction(); showGitMenu = false }
-            ))
-        }
-        if let reviewAction = onReview {
-            items.append((
-                "Review", "magnifyingglass",
-                { reviewAction(); showGitMenu = false }
             ))
         }
         if let syncAction = onSync {

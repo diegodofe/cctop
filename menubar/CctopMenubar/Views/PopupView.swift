@@ -128,19 +128,19 @@ struct PopupView: View {
             }
             ZStack(alignment: .top) {
                 // Keep all tabs in the hierarchy to prevent constraint crashes
-                // Only show the active one via opacity
+                // Hidden tabs have 0 height + no interaction
                 activeContent
                     .opacity(selectedTab == .active && !overlayController.hideContent ? 1 : 0)
-                    .frame(maxHeight: selectedTab == .active ? .infinity : 0)
-                    .clipped()
+                    .frame(height: selectedTab == .active ? nil : 0)
+                    .allowsHitTesting(selectedTab == .active)
                 inReviewContent
                     .opacity(selectedTab == .inReview && !overlayController.hideContent ? 1 : 0)
-                    .frame(maxHeight: selectedTab == .inReview ? .infinity : 0)
-                    .clipped()
+                    .frame(height: selectedTab == .inReview ? nil : 0)
+                    .allowsHitTesting(selectedTab == .inReview)
                 recentContent
                     .opacity(selectedTab == .recent && !overlayController.hideContent ? 1 : 0)
-                    .frame(maxHeight: selectedTab == .recent ? .infinity : 0)
-                    .clipped()
+                    .frame(height: selectedTab == .recent ? nil : 0)
+                    .allowsHitTesting(selectedTab == .recent)
                 if let overlay = overlayController.active {
                     overlayPanel {
                         switch overlay {
@@ -353,9 +353,6 @@ struct PopupView: View {
             gitUnpushed: worktreeManager.gitSyncStatus[session.projectPath]?.unpushed ?? false,
             gitStaged: worktreeManager.gitSyncStatus[session.projectPath]?.staged ?? 0,
             gitUnstaged: worktreeManager.gitSyncStatus[session.projectPath]?.unstaged ?? 0,
-            onReview: perkupReviewAction(for: session),
-            isReviewing: worktreeManager.reviewingPaths
-                .contains(session.projectPath),
             onSync: perkupSyncAction(for: session),
             isSyncing: worktreeManager.syncingPaths
                 .contains(session.projectPath),
@@ -897,19 +894,6 @@ extension PopupView {
         }
         return {
             shipSessionPath = session.projectPath
-        }
-    }
-
-    private func perkupReviewAction(
-        for session: Session
-    ) -> (() -> Void)? {
-        guard WorktreeManager.isPerkupWorktree(session.projectPath),
-              !worktreeManager.reviewingPaths.contains(session.projectPath)
-        else { return nil }
-        return {
-            worktreeManager.startReview(
-                projectPath: session.projectPath
-            )
         }
     }
 
